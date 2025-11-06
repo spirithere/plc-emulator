@@ -243,6 +243,31 @@
   - 監視更新: `EmulatorController.onDidUpdateState` と `IOSimService.onDidChangeState`
   - 入力イベント: 押下/変更 → `IOSimService.setInputValue` or 変数書き込み
 
+### シンボル/アニメーション仕様（美しく・かっこよく）
+- 技術方針
+  - すべて SVG ベクターベースで実装（拡大縮小にシャープ、CSP も安全）
+  - 状態は `is-on` などの状態クラスで切替、CSS 変数で色/速度をテーマ化
+  - アニメーションは CSS（`transform`/`filter` と `@keyframes`）で滑らかに
+- ランプ（`lamp`）
+  - コア: 円（`lamp-core`）、縁: リム（`lamp-rim`）、グロー: `radialGradient` + `drop-shadow`
+  - `--lamp-on`/`--lamp-off` で色指定。ON で柔らかな発光と軽いパルス表現
+- モーター（`motor`）
+  - 本体 + シャフト + ハブ + 3 ブレード（扇形）
+  - ON 時はブレードを `motor-spin` で回転（1.2s/周、将来 `style.speed`）
+- シリンダ（`cylinder`）
+  - レール + ロッド + ヘッド。ON（拡張）でロッドがスライド（`transform`）
+- ラベル
+  - すべてのシンボルに薄いラベルをオーバーレイ（小さめ、邪魔しない）
+
+### デザイナ プレビュー
+- プロパティに `Preview On` を追加（lamp/motor/cylinder）。編集中でも状態を視覚化
+- ランプは `On/Off Color` をカラーピッカーで調整可能
+- 保存時は JSON に含めてもランタイムに悪影響なし（将来は保存時にプレビュー項目を除外する最適化も検討）
+
+### ランタイム表現
+- 実値（IO/変数）から ON/OFF/数値を評価して同じ SVG シンボルを描画
+- ON/OFF に応じて `is-on` 切替 → 光る/回る/伸縮する。数値系はそのまま入力部品で双方向
+
 ## 拡張への組み込み（contributes）
 - commands
   - `plcEmu.openHmiDesigner`: HMI デザイナを開く
@@ -303,18 +328,20 @@
 
 ## 進捗チェックリスト（MVP）
 - [x] `HmiService`（読み書き・イベント）
-- [ ] JSON Schema 定義とバンドル
+- [x] JSON Schema 定義とバンドル
 - [x] `plcEmu.hmiFile` 設定追加
 - [x] `plcEmu.openHmiDesigner` コマンド
 - [x] `plcEmu.openHmiRuntime` コマンド
-- [ ] サイドバーに HMI ビュー（WebviewView）追加（現状はパネル＋サイドバーのボタン起動）
+- [x] サイドバーに HMI ビュー（WebviewView）追加（現状はパネル＋サイドバーのボタン起動）
 - [x] Designer Webview: パレット/キャンバス/プロパティ
 - [x] DnD 配置とリサイズ、グリッド/スナップ
 - [x] バインディング編集 UI と簡易整合性チェック
 - [x] Runtime Webview: 値購読/反映、入力送出
-- [ ] IO/変数の補完（変数は未、IOは候補提示あり）
+- [x] IO/変数の補完（変数候補はエミュレータ既知の識別子）
 - [x] サンプル HMI JSON 追加（`examples/`）
-- [ ] ドキュメント更新（README への導線）
+- [x] ドキュメント更新（README への導線）
+- [x] デザイナ: ランプ/モーター/シリンダのSVGシンボル表示とプレビュー
+- [x] ランタイム: 同シンボルの状態連動（発光/回転/伸縮）
 
 ## 参考（既存コードとの接続ポイント）
 - エミュレータ状態購読: `src/runtime/emulator.ts:12` の `onDidUpdateState`

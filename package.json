@@ -23,6 +23,7 @@
     "onCommand:plcEmu.stop",
     "onView:plcPouExplorer",
     "onView:plcRuntimeControls",
+    "onView:plcHmiView",
     "onCommand:plcEmu.openHmiDesigner",
     "onCommand:plcEmu.openHmiRuntime"
   ],
@@ -97,10 +98,25 @@
         },
         {
           "id": "plcRuntimeControls",
-          "name": "Runtime"
+          "name": "Runtime",
+          "type": "webview"
+        },
+        {
+          "id": "plcHmiView",
+          "name": "HMI",
+          "type": "webview"
         }
       ]
     },
+    "jsonValidation": [
+      {
+        "fileMatch": [
+          ".plc/hmi.json",
+          "**/hmi.json"
+        ],
+        "url": "./schemas/hmi.schema.json"
+      }
+    ],
     "menus": {
       "view/title": [
         {

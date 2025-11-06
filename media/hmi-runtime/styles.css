@@ -2,6 +2,75 @@ html, body { height: 100%; }
 body { margin: 0; color: var(--vscode-foreground); background: var(--vscode-editor-background); font-size: 12px; }
 #app { position: relative; width: 100%; height: 100%; }
 .widget { position: absolute; box-sizing: border-box; display: flex; align-items: center; justify-content: center; }
-.w-button { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: 1px solid var(--vscode-button-border); cursor: pointer; }
-.w-lamp { border-radius: 12px; border: 1px solid var(--vscode-panel-border); }
+.w-button { background: transparent; border: none; cursor: pointer; }
+.w-lamp { border: none; }
 .w-text { background: transparent; border: none; }
+
+/* label */
+.widget-label { position: absolute; left: 4px; right: 4px; bottom: 2px; text-align: center; font-size: 11px; opacity: .8; pointer-events: none; }
+
+/* Lamp */
+.svg-lamp { width: 100%; height: 100%; display: block; }
+.lamp-core { fill: var(--lamp-off, #2b2b2b); transition: fill .2s ease; }
+.lamp-rim { stroke: #00000055; stroke-width: 4; }
+.lamp-glow { opacity: 0; transition: opacity .2s ease; }
+.w-lamp.is-on .lamp-core { fill: var(--lamp-on, #16ff8a); }
+.w-lamp.is-on .lamp-glow { opacity: .9; filter: drop-shadow(0 0 12px var(--lamp-on, #16ff8a)); }
+
+/* Motor */
+.svg-motor { width: 100%; height: 100%; display: block; }
+.motor-body { fill: #0b1320; stroke: #1f2b45; stroke-width: 2; }
+.motor-shaft { fill: #9aa4b2; }
+.motor-hub, .motor-blade { fill: var(--motor-color, #42baf9); }
+.motor-blades { transform-origin: 80px 50px; animation: motor-spin 1.2s linear infinite; animation-play-state: paused; }
+.w-motor.is-on .motor-blades { animation-play-state: running; }
+@keyframes motor-spin { to { transform: rotate(360deg); } }
+
+/* Cylinder */
+.svg-cylinder { width: 100%; height: 100%; display: block; }
+.cyl-rail { fill: #121a26; stroke: #273142; stroke-width: 2; }
+.cyl-head { fill: var(--cyl-color, #a78bfa); opacity: .9; }
+.cyl-rod { fill: var(--cyl-color, #a78bfa); transform-origin: 14px 50px; transition: transform .2s ease; }
+.w-cylinder.is-on .cyl-rod { transform: translateX(40px); }
+/* Button skin */
+.btn-skin {
+  position: relative; width: 100%; height: 100%;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--vscode-button-foreground);
+  background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(0,0,0,0.18)), var(--vscode-button-background);
+  border: 1px solid var(--vscode-button-border);
+  border-radius: 8px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.05), 0 6px 14px rgba(0,0,0,0.28);
+  transition: transform .06s ease, box-shadow .12s ease, filter .12s ease;
+}
+.w-button:hover .btn-skin { filter: brightness(1.05); }
+.w-button.is-pressed .btn-skin { transform: translateY(1px) scale(0.99); box-shadow: inset 0 1px 0 rgba(0,0,0,0.25), 0 2px 6px rgba(0,0,0,0.2); }
+.w-button.is-on .btn-skin { outline: 2px solid var(--vscode-focusBorder); }
+.btn-label { padding: 0 10px; font-weight: 600; letter-spacing: .2px; }
+
+/* Ripple effect */
+.btn-ripple {
+  position: absolute; width: 6px; height: 6px; border-radius: 999px; pointer-events: none;
+  background: currentColor; opacity: .35; transform: translate(-50%, -50%) scale(1);
+  animation: ripple .45s ease-out forwards;
+}
+@keyframes ripple { to { opacity: 0; transform: translate(-50%, -50%) scale(22); } }
+
+/* Switch */
+.switch-skin { position: relative; width: 100%; height: 100%; display: grid; grid-template-rows: 1fr auto; align-items: center; }
+.sw-track {
+  position: relative; width: 100%; height: 60%; min-height: 20px;
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 999px; box-shadow: inset 0 2px 6px rgba(0,0,0,0.25);
+}
+.sw-knob {
+  position: absolute; top: 50%; left: 4px; transform: translate(0,-50%);
+  width: calc(40% - 4px); min-width: 16px; aspect-ratio: 1/1;
+  background: linear-gradient(180deg, #fff6, #0004), var(--vscode-editor-background);
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 50%; transition: transform .2s ease;
+  box-shadow: 0 2px 8px rgba(0,0,0,.35);
+}
+.w-switch.is-on .sw-knob { transform: translate(calc(150% + 4px), -50%); }
+.sw-label { margin-top: 4px; font-size: 11px; text-align: center; opacity: .85; }

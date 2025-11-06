@@ -46,3 +46,16 @@ Open the folder in VS Code and press `F5` to launch the extension host. Once run
 - The emulator executes straight-line assignments and basic ladder logic. Complex instructions/function blocks are placeholders for future milestones.
 
 Track implementation progress via `docs/implementation-plan.md`.
+
+## HMI (Designer & Runtime)
+
+An experimental HMI editor and runtime are included:
+
+- Open the HMI Launcher from the activity bar under the PLC Emulator view named `HMI`, or run commands:
+  - `PLC Emulator: Open HMI Designer`
+  - `PLC Emulator: Open HMI Runtime`
+- HMI layout and bindings are stored in a workspace-relative JSON file controlled by the `plcEmu.hmiFile` setting (defaults to `.plc/hmi.json`).
+- JSON Schema validation is bundled and auto-applies to `hmi.json` files. See `schemas/hmi.schema.json` and the design notes in `docs/hmi-implementation-plan.md`.
+- A starter `examples/sample-hmi.json` is provided. Use the HMI launcher’s “Open hmi.json” to create one from the sample if missing.
+
+HMI MVP widgets: button, switch, slider, numeric, lamp, text, motor, cylinder. Designer supports drag, snap-to-grid, resize; Runtime binds to IO and variables.

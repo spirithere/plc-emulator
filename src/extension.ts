@@ -8,6 +8,7 @@ import { IOPanelManager } from './io/ioPanel';
 import { ProfileManager } from './runtime/profileManager';
 import { POUTreeProvider } from './views/pouTree';
 import { RuntimeViewProvider } from './views/runtimeView';
+import { HmiLauncherViewProvider } from './views/hmiView';
 import { HmiService } from './hmi/hmiService';
 import { HmiDesignerPanelManager } from './hmi/hmiDesignerPanel';
 import { HmiRuntimePanelManager } from './hmi/hmiRuntimePanel';
@@ -21,6 +22,7 @@ let emulator: EmulatorController;
 let profileManager: ProfileManager;
 let pouTreeProvider: POUTreeProvider;
 let runtimeViewProvider: RuntimeViewProvider;
+let hmiLauncherViewProvider: HmiLauncherViewProvider;
 // no quickActionsViewProvider
 let hmiService: HmiService;
 let hmiDesigner: HmiDesignerPanelManager;
@@ -35,8 +37,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   ladderManager = new LadderPanelManager(context.extensionUri, plcService, emulator);
   pouTreeProvider = new POUTreeProvider(plcService);
   runtimeViewProvider = new RuntimeViewProvider(context.extensionUri, emulator, ioService, profileManager);
+  hmiLauncherViewProvider = new HmiLauncherViewProvider(context.extensionUri);
   hmiService = new HmiService();
-  hmiDesigner = new HmiDesignerPanelManager(context.extensionUri, hmiService, ioService);
+  hmiDesigner = new HmiDesignerPanelManager(context.extensionUri, hmiService, ioService, emulator);
   hmiRuntime = new HmiRuntimePanelManager(context.extensionUri, hmiService, ioService, emulator);
   // Set up a context key to toggle Run/Stop toolbar items
   const setRunningContext = (running: boolean): Thenable<unknown> =>
@@ -74,7 +77,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
     }),
     vscode.window.registerTreeDataProvider('plcPouExplorer', pouTreeProvider),
-    vscode.window.registerWebviewViewProvider('plcRuntimeControls', runtimeViewProvider)
+    vscode.window.registerWebviewViewProvider('plcRuntimeControls', runtimeViewProvider),
+    vscode.window.registerWebviewViewProvider('plcHmiView', hmiLauncherViewProvider)
   );
 
   // initialize and maintain the running state context key

@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "plc-emu.hmi.schema.json",
+  "title": "PLC Emulator HMI Schema",
+  "type": "object",
+  "required": ["version", "canvas", "pages"],
+  "properties": {
+    "version": { "type": "integer", "const": 1 },
+    "canvas": {
+      "type": "object",
+      "required": ["width", "height"],
+      "properties": {
+        "width": { "type": "integer", "minimum": 100 },
+        "height": { "type": "integer", "minimum": 100 },
+        "grid": { "type": "integer", "minimum": 1 },
+        "background": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "pages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "widgets"],
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "widgets": {
+            "type": "array",
+            "items": { "$ref": "#/$defs/widget" }
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "$defs": {
+    "binding": {
+      "type": "object",
+      "required": ["target", "symbol"],
+      "properties": {
+        "target": { "enum": ["input", "output", "variable"] },
+        "symbol": { "type": "string" },
+        "expression": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "base": {
+      "type": "object",
+      "required": ["id", "type", "x", "y", "width", "height"],
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string" },
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "width": { "type": "number", "minimum": 4 },
+        "height": { "type": "number", "minimum": 4 },
+        "rotation": { "type": "number" },
+        "zIndex": { "type": "integer" },
+        "label": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "widget": {
+      "allOf": [
+        { "$ref": "#/$defs/base" },
+        {
+          "oneOf": [
+            { "$ref": "#/$defs/w_button" },
+            { "$ref": "#/$defs/w_switch" },
+            { "$ref": "#/$defs/w_slider" },
+            { "$ref": "#/$defs/w_numeric" },
+            { "$ref": "#/$defs/w_lamp" },
+            { "$ref": "#/$defs/w_text" },
+            { "$ref": "#/$defs/w_motor" },
+            { "$ref": "#/$defs/w_cylinder" }
+          ]
+        }
+      ]
+    },
+    "w_button": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "button" },
+        "variant": { "enum": ["momentary", "toggle"] },
+        "binding": { "$ref": "#/$defs/binding" }
+      },
+      "additionalProperties": true
+    },
+    "w_switch": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "switch" },
+        "binding": { "$ref": "#/$defs/binding" }
+      },
+      "additionalProperties": true
+    },
+    "w_slider": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "slider" },
+        "min": { "type": "number" },
+        "max": { "type": "number" },
+        "step": { "type": "number" },
+        "binding": { "$ref": "#/$defs/binding" }
+      },
+      "additionalProperties": true
+    },
+    "w_numeric": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "numeric" },
+        "binding": { "$ref": "#/$defs/binding" }
+      },
+      "additionalProperties": true
+    },
+    "w_lamp": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "lamp" },
+        "style": {
+          "type": "object",
+          "properties": {
+            "onColor": { "type": "string" },
+            "offColor": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        "binding": { "$ref": "#/$defs/binding" }
+      },
+      "additionalProperties": true
+    },
+    "w_text": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "text" },
+        "text": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "w_motor": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "motor" },
+        "binding": { "$ref": "#/$defs/binding" }
+      },
+      "additionalProperties": true
+    },
+    "w_cylinder": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "cylinder" },
+        "binding": { "$ref": "#/$defs/binding" }
+      },
+      "additionalProperties": true
+    }
+  }
+}
+

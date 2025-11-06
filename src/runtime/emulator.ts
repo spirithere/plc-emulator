@@ -59,6 +59,10 @@ export class EmulatorController {
     this.variables.set(identifier, value);
   }
 
+  public getVariableNames(): string[] {
+    return Array.from(this.variables.keys());
+  }
+
   private scanCycle(): void {
     const pous = this.plcService.getStructuredTextBlocks();
     pous.forEach(block => this.executeStructuredText(block));

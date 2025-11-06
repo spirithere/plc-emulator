@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { HmiService } from './hmiService';
 import { HmiModel } from './types';
 import { IOSimService } from '../io/ioService';
+import { EmulatorController } from '../runtime/emulator';
 
 export class HmiDesignerPanelManager {
   private panel: vscode.WebviewPanel | undefined;
@@ -9,7 +10,8 @@ export class HmiDesignerPanelManager {
   constructor(
     private readonly extensionUri: vscode.Uri,
     private readonly hmiService: HmiService,
-    private readonly ioService: IOSimService
+    private readonly ioService: IOSimService,
+    private readonly emulator: EmulatorController
   ) {}
 
   public show(): void {
@@ -56,6 +58,10 @@ export class HmiDesignerPanelManager {
         this.postMessage({ type: 'ioList', inputs: io.inputs, outputs: io.outputs });
         break;
       }
+      case 'requestVariableList': {
+        this.postMessage({ type: 'variableList', variables: this.emulator.getVariableNames() });
+        break;
+      }
       default:
         break;
     }
@@ -66,6 +72,7 @@ export class HmiDesignerPanelManager {
     this.postMessage({ type: 'loaded', hmi: model });
     const io = this.ioService.getState();
     this.postMessage({ type: 'ioList', inputs: io.inputs, outputs: io.outputs });
+    this.postMessage({ type: 'variableList', variables: this.emulator.getVariableNames() });
   }
 
   private postMessage(payload: unknown): void {
@@ -101,10 +108,6 @@ export class HmiDesignerPanelManager {
       <button data-widget="text">+ Text</button>
     </div>
     <div id="workspace">
-      <div id="palette">
-        <div class="panel-title">パレット</div>
-        <div class="help">ヒント: 上のツールバーからウィジェットを追加できます。</div>
-      </div>
       <div id="canvas" tabindex="0"></div>
       <div id="props">
         <div class="panel-title">プロパティ</div>
