@@ -3,7 +3,7 @@ import { PLCopenService } from '../services/plcopenService';
 import { LadderElement, LadderRung, StructuredTextBlock } from '../types';
 import { IOSimService } from '../io/ioService';
 import { ProfileManager } from './profileManager';
-import { StructuredTextRuntime } from './st/runtime';
+import { StructuredTextDiagnosticEvent, StructuredTextRuntime } from './st/runtime';
 
 export class EmulatorController {
   private scanHandle: NodeJS.Timeout | undefined;
@@ -71,6 +71,11 @@ export class EmulatorController {
 
   public getVariableNames(): string[] {
     return Array.from(this.variables.keys());
+  }
+
+  public onStructuredTextDiagnostics(listener: (event: StructuredTextDiagnosticEvent) => void): vscode.Disposable {
+    const dispose = this.stRuntime.onDiagnostics(listener);
+    return { dispose };
   }
 
   private scanCycle(): void {

@@ -12,6 +12,7 @@ import { HmiLauncherViewProvider } from './views/hmiView';
 import { HmiService } from './hmi/hmiService';
 import { HmiDesignerPanelManager } from './hmi/hmiDesignerPanel';
 import { HmiRuntimePanelManager } from './hmi/hmiRuntimePanel';
+import { StructuredTextDiagnosticEvent } from './runtime/st/runtime';
 // Quick actions are now exposed as view title toolbar items via menus; no webview needed.
 
 let plcService: PLCopenService;
@@ -51,8 +52,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push(plcService.onDidChangeModel(syncIoFromModel));
   syncIoFromModel();
 
+  const stDiagnostics = vscode.languages.createDiagnosticCollection('plc-structured-text');
+
   context.subscriptions.push(
     plcService,
+    stDiagnostics,
+    emulator.onStructuredTextDiagnostics(event => {
+      void handleStructuredTextDiagnostics(event, stDiagnostics, plcService);
+    }),
     vscode.commands.registerCommand('plcEmu.openProject', () => plcService.pickAndLoadProject()),
     vscode.commands.registerCommand('plcEmu.openStructuredText', () => openStructuredTextEditor()),
     vscode.commands.registerCommand('plcEmu.openStructuredTextBlock', (name: string) => openStructuredTextEditor(name)),
@@ -130,4 +137,84 @@ async function openStructuredTextEditor(targetName?: string): Promise<void> {
 
 function ensureWorkspaceRoot(): vscode.Uri | undefined {
   return vscode.workspace.workspaceFolders?.[0]?.uri;
+}
+
+async function handleStructuredTextDiagnostics(
+  event: StructuredTextDiagnosticEvent,
+  collection: vscode.DiagnosticCollection,
+  plcService: PLCopenService
+): Promise<void> {
+  const workspaceRoot = ensureWorkspaceRoot();
+  if (!workspaceRoot) {
+    return;
+  }
+
+  const cacheDir = vscode.Uri.joinPath(workspaceRoot, '.plc', 'st');
+  await vscode.workspace.fs.createDirectory(cacheDir);
+
+  const fileUri = vscode.Uri.joinPath(cacheDir, `${event.blockName}.st`);
+
+  const body =
+    event.blockBody ?? plcService.getStructuredTextBlocks().find(block => block.name === event.blockName)?.body ?? '';
+
+  if (event.diagnostics.length > 0) {
+    await ensureMirrorFile(fileUri, body);
+    const diagnostics = event.diagnostics.map(diag => {
+      const range = createRangeFromOffsets(body, diag.startOffset, diag.endOffset);
+      const severity = diag.severity === 'warning'
+        ? vscode.DiagnosticSeverity.Warning
+        : vscode.DiagnosticSeverity.Error;
+      const diagnostic = new vscode.Diagnostic(range, diag.message, severity);
+      diagnostic.source = diag.source === 'runtime' ? 'StructuredText Runtime' : 'StructuredText Parser';
+      return diagnostic;
+    });
+    collection.set(fileUri, diagnostics);
+    return;
+  }
+
+  collection.delete(fileUri);
+}
+
+async function ensureMirrorFile(uri: vscode.Uri, body: string): Promise<void> {
+  try {
+    const existing = await vscode.workspace.fs.readFile(uri);
+    if (Buffer.from(existing).toString('utf8') === body) {
+      return;
+    }
+  } catch {
+    // File missing – fall through and create it.
+  }
+
+  await vscode.workspace.fs.writeFile(uri, Buffer.from(body, 'utf8'));
+}
+
+function createRangeFromOffsets(body: string, start?: number, end?: number): vscode.Range {
+  if (start === undefined && end === undefined) {
+    return new vscode.Range(0, 0, 0, 0);
+  }
+
+  const safeStart = clampOffset(start ?? 0, body.length);
+  const safeEnd = clampOffset(end ?? safeStart, body.length);
+  const startPos = offsetToPosition(body, Math.min(safeStart, safeEnd));
+  const endPos = offsetToPosition(body, Math.max(safeStart, safeEnd));
+  return new vscode.Range(startPos, endPos);
+}
+
+function offsetToPosition(text: string, offset: number): vscode.Position {
+  const slice = text.slice(0, offset);
+  const lineBreaks = slice.match(/\r?\n/g);
+  const line = lineBreaks ? lineBreaks.length : 0;
+  const lastLineBreakIndex = Math.max(slice.lastIndexOf('\n'), slice.lastIndexOf('\r'));
+  const column = offset - (lastLineBreakIndex >= 0 ? lastLineBreakIndex + 1 : 0);
+  return new vscode.Position(line, column);
+}
+
+function clampOffset(offset: number, max: number): number {
+  if (Number.isNaN(offset) || offset < 0) {
+    return 0;
+  }
+  if (offset > max) {
+    return max;
+  }
+  return offset;
 }

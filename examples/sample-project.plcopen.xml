@@ -11,7 +11,7 @@ PROGRAM MainProgram
     MotorOn : BOOL := FALSE;
   END_VAR
   Counter := Counter + 1;
-  MotorOn := (Counter % 2) = 0;
+  MotorOn := (Counter MOD 2) = 0;
 END_PROGRAM
 ]]></ST>
         </body>

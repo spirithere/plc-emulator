@@ -17,11 +17,30 @@ interface BlockCacheEntry {
   canonicalNames: Map<string, string>;
   tempVarNames: Set<string>;
   sectionByName: Map<string, VarSectionType>;
+  runtimeDiagnostics: RuntimeDiagnostic[];
+  lastDiagnosticsSignature?: string;
+}
+
+export type RuntimeDiagnosticSeverity = 'error' | 'warning';
+
+export interface RuntimeDiagnostic {
+  message: string;
+  severity: RuntimeDiagnosticSeverity;
+  source: 'parser' | 'runtime';
+  startOffset?: number;
+  endOffset?: number;
+}
+
+export interface StructuredTextDiagnosticEvent {
+  blockName: string;
+  blockBody?: string;
+  diagnostics: RuntimeDiagnostic[];
 }
 
 export class StructuredTextRuntime {
   private readonly cache = new Map<string, BlockCacheEntry>();
   private readonly interpreter: StructuredTextInterpreter;
+  private readonly diagnosticsListeners = new Set<(event: StructuredTextDiagnosticEvent) => void>();
 
   constructor(
     private readonly ioService: IOSimService,
@@ -38,17 +57,23 @@ export class StructuredTextRuntime {
 
   public invalidate(blockName?: string): void {
     if (blockName) {
-      this.cache.delete(blockName);
+      const existing = this.cache.get(blockName);
+      if (existing) {
+        this.cache.delete(blockName);
+        this.emitDiagnostics({ blockName, blockBody: undefined, diagnostics: [] });
+      }
     } else {
+      const blockNames = Array.from(this.cache.keys());
       this.cache.clear();
+      blockNames.forEach(name => this.emitDiagnostics({ blockName: name, blockBody: undefined, diagnostics: [] }));
     }
   }
 
   public seed(blocks: StructuredTextBlock[], memory: Map<string, MemoryValue>): void {
     blocks.forEach(block => {
       const entry = this.getOrParse(block);
+      this.emitSnapshot(block, entry);
       if (entry.diagnostics.length > 0 || !entry.program) {
-        this.emitDiagnostics(block.name, entry.diagnostics);
         return;
       }
       this.ensureInitialized(entry, memory);
@@ -58,11 +83,11 @@ export class StructuredTextRuntime {
   public execute(blocks: StructuredTextBlock[], memory: Map<string, MemoryValue>): void {
     blocks.forEach(block => {
       const entry = this.getOrParse(block);
+      this.emitSnapshot(block, entry);
       if (entry.diagnostics.length > 0 || !entry.program) {
-        this.emitDiagnostics(block.name, entry.diagnostics);
         return;
       }
-      this.runProgram(entry, memory);
+      this.runProgram(block, entry, memory);
     });
   }
 
@@ -111,7 +136,9 @@ export class StructuredTextRuntime {
       initialized: false,
       canonicalNames,
       tempVarNames,
-      sectionByName
+      sectionByName,
+      runtimeDiagnostics: [],
+      lastDiagnosticsSignature: undefined
     };
 
     this.cache.set(block.name, entry);
@@ -142,7 +169,7 @@ export class StructuredTextRuntime {
     entry.initialized = true;
   }
 
-  private runProgram(entry: BlockCacheEntry, memory: Map<string, MemoryValue>): void {
+  private runProgram(block: StructuredTextBlock, entry: BlockCacheEntry, memory: Map<string, MemoryValue>): void {
     if (!entry.program) {
       return;
     }
@@ -161,15 +188,29 @@ export class StructuredTextRuntime {
 
     try {
       this.interpreter.execute(entry.program, env);
+      if (entry.runtimeDiagnostics.length > 0) {
+        entry.runtimeDiagnostics = [];
+        this.emitSnapshot(block, entry);
+      }
     } catch (error) {
-      this.log(`Runtime error: ${(error as Error).message}`);
+      const message = error instanceof Error ? error.message : String(error);
+      this.log(`Runtime error in ${block.name}: ${message}`);
+      entry.runtimeDiagnostics = [
+        {
+          message,
+          severity: 'error',
+          source: 'runtime'
+        }
+      ];
+      this.emitSnapshot(block, entry);
     }
   }
 
-  private emitDiagnostics(blockName: string, diagnostics: ParseDiagnostic[]): void {
-    diagnostics.forEach(diag => {
-      this.log(`ST parse error in ${blockName}: ${diag.message}`);
-    });
+  public onDiagnostics(listener: (event: StructuredTextDiagnosticEvent) => void): () => void {
+    this.diagnosticsListeners.add(listener);
+    return () => {
+      this.diagnosticsListeners.delete(listener);
+    };
   }
 
   private createExecutionEnv(
@@ -337,8 +378,7 @@ export class StructuredTextRuntime {
         return Math.min(Math.max(value, lo), hi);
       }
       default:
-        this.log(`Unsupported function ${name}`);
-        return undefined;
+        throw new Error(`Unsupported function ${name ?? 'UNKNOWN'}`);
     }
   }
 
@@ -356,5 +396,49 @@ export class StructuredTextRuntime {
   private normalize(value: string): string {
     return value.toUpperCase();
   }
-}
 
+  private emitSnapshot(block: StructuredTextBlock, entry: BlockCacheEntry): void {
+    const diagnostics: RuntimeDiagnostic[] = [
+      ...entry.diagnostics.map(diag => ({
+        message: diag.message,
+        severity: 'error' as const,
+        source: 'parser' as const,
+        startOffset: diag.startOffset,
+        endOffset: diag.endOffset
+      })),
+      ...entry.runtimeDiagnostics
+    ];
+
+    const signature = JSON.stringify(
+      diagnostics.map(d => [d.message, d.severity, d.source, d.startOffset ?? null, d.endOffset ?? null])
+    );
+
+    if (signature === entry.lastDiagnosticsSignature) {
+      return;
+    }
+
+    entry.lastDiagnosticsSignature = signature;
+
+    if (diagnostics.length > 0) {
+      diagnostics.forEach(diag => {
+        this.log(`ST diagnostic in ${block.name}: ${diag.message}`);
+      });
+    }
+
+    this.emitDiagnostics({
+      blockName: block.name,
+      blockBody: block.body,
+      diagnostics
+    });
+  }
+
+  private emitDiagnostics(event: StructuredTextDiagnosticEvent): void {
+    this.diagnosticsListeners.forEach(listener => {
+      try {
+        listener(event);
+      } catch (error) {
+        this.log(`Diagnostics listener threw: ${(error as Error).message}`);
+      }
+    });
+  }
+}
