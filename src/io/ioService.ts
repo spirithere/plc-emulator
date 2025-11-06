@@ -7,17 +7,14 @@ export interface IOStateSnapshot {
 }
 
 export class IOSimService {
-  private readonly inputs: DigitalChannel[] = [
-    { id: 'I0', label: 'Start Button', type: 'input', value: true },
-    { id: 'I1', label: 'Stop Button', type: 'input', value: false },
-    { id: 'I2', label: 'Emergency', type: 'input', value: false }
-  ];
+  // Start with no predefined channels; populate from ladder/ST/HMI interactions.
+  private readonly inputs: DigitalChannel[] = [];
 
-  private readonly outputs: DigitalChannel[] = [
-    { id: 'Q0', label: 'Motor', type: 'output', value: false },
-    { id: 'Q1', label: 'Pump', type: 'output', value: false },
-    { id: 'Q2', label: 'Alarm', type: 'output', value: false }
-  ];
+  private readonly outputs: DigitalChannel[] = [];
+
+  // Track which channels came from ladder so we can reconcile on project changes.
+  private ladderInputIds = new Set<string>();
+  private ladderOutputIds = new Set<string>();
 
   private readonly changeEmitter = new vscode.EventEmitter<IOStateSnapshot>();
   public readonly onDidChangeState = this.changeEmitter.event;
@@ -30,57 +27,77 @@ export class IOSimService {
   }
 
   public syncFromProject(model: PLCProjectModel): void {
-    if (!model?.ladder?.length) {
-      return;
-    }
-
-    const coilLabels = new Set<string>();
-    const contactDefaults = new Map<string, boolean>();
+    // Build desired sets from ladder: inputs (X contacts) and outputs (Y coils).
+    const desiredInputDefaults = new Map<string, boolean>();
+    const desiredOutputDefaults = new Map<string, boolean>();
 
     const registerElement = (element: LadderElement): void => {
-      if (element.type === 'coil') {
-        coilLabels.add(element.label);
-        return;
-      }
-
-      if (element.type === 'contact') {
+      const addr = (element as any).addrType || this.inferAddrType(element.label);
+      if (element.type === 'contact' && addr === 'X') {
         const preferredDefault = element.state ?? false;
-        if (!contactDefaults.has(element.label)) {
-          contactDefaults.set(element.label, preferredDefault);
-          return;
+        if (!desiredInputDefaults.has(element.label)) {
+          desiredInputDefaults.set(element.label, preferredDefault);
+        } else if (preferredDefault) {
+          desiredInputDefaults.set(element.label, true);
         }
-
-        if (preferredDefault) {
-          contactDefaults.set(element.label, true);
-        }
+      } else if (element.type === 'coil' && addr === 'Y') {
+        const defaultValue = element.state ?? false;
+        // In case of duplicates, OR keeps any true initialization.
+        desiredOutputDefaults.set(element.label, (desiredOutputDefaults.get(element.label) ?? false) || defaultValue);
       }
     };
 
-    model.ladder.forEach(rung => {
+    model?.ladder?.forEach(rung => {
       rung.elements.forEach(registerElement);
       rung.branches?.forEach(branch => {
         branch.elements.forEach(registerElement);
       });
     });
 
+    // Reconcile: remove ladder-sourced channels that no longer exist in the model.
     let mutated = false;
-    contactDefaults.forEach((defaultValue, label) => {
-      if (coilLabels.has(label)) {
-        return;
-      }
 
-      if (this.findChannel(this.inputs, label)) {
-        return;
+    if (this.ladderInputIds.size > 0) {
+      const keep = new Set(desiredInputDefaults.keys());
+      for (let i = this.inputs.length - 1; i >= 0; i -= 1) {
+        const ch = this.inputs[i];
+        if (this.ladderInputIds.has(ch.id) && !keep.has(ch.id)) {
+          this.inputs.splice(i, 1);
+          mutated = true;
+        }
       }
+    }
 
-      this.inputs.push({
-        id: label,
-        label,
-        type: 'input',
-        value: defaultValue
-      });
-      mutated = true;
+    if (this.ladderOutputIds.size > 0) {
+      const keep = new Set(desiredOutputDefaults.keys());
+      for (let i = this.outputs.length - 1; i >= 0; i -= 1) {
+        const ch = this.outputs[i];
+        if (this.ladderOutputIds.has(ch.id) && !keep.has(ch.id)) {
+          this.outputs.splice(i, 1);
+          mutated = true;
+        }
+      }
+    }
+
+    // Add missing inputs from ladder (X contacts)
+    desiredInputDefaults.forEach((defaultValue, label) => {
+      if (!this.findChannel(this.inputs, label)) {
+        this.inputs.push({ id: label, label, type: 'input', value: defaultValue });
+        mutated = true;
+      }
     });
+
+    // Add missing outputs from ladder (Y coils)
+    desiredOutputDefaults.forEach((defaultValue, label) => {
+      if (!this.findChannel(this.outputs, label)) {
+        this.outputs.push({ id: label, label, type: 'output', value: defaultValue });
+        mutated = true;
+      }
+    });
+
+    // Update tracking sets for next reconciliation
+    this.ladderInputIds = new Set(desiredInputDefaults.keys());
+    this.ladderOutputIds = new Set(desiredOutputDefaults.keys());
 
     if (mutated) {
       this.emit();
@@ -129,5 +146,12 @@ export class IOSimService {
 
   private findChannel(channels: DigitalChannel[], identifier: string): DigitalChannel | undefined {
     return channels.find(channel => channel.id === identifier || channel.label === identifier);
+  }
+
+  private inferAddrType(identifier: string | undefined): 'X' | 'M' | 'Y' | undefined {
+    if (!identifier) return undefined;
+    const c = String(identifier).trim().toUpperCase()[0];
+    if (c === 'X' || c === 'M' || c === 'Y') return c;
+    return undefined;
   }
 }

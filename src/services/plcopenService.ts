@@ -153,6 +153,7 @@ export class PLCopenService implements vscode.Disposable {
       const typeRaw = readAttr(node, 'type');
       const stateRaw = readAttr(node, 'state');
       const variant = readAttr(node, 'variant') ?? 'no';
+      const addrTypeRaw = readAttr(node, 'addrType');
 
       let state: boolean | undefined;
       if (stateRaw === 'true' || stateRaw === true) {
@@ -166,7 +167,8 @@ export class PLCopenService implements vscode.Disposable {
         label,
         type: typeRaw === 'coil' ? 'coil' : 'contact',
         state,
-        variant
+        variant,
+        addrType: this.inferAddrType(addrTypeRaw ?? label)
       };
     }) ?? [];
   }
@@ -280,6 +282,10 @@ export class PLCopenService implements vscode.Disposable {
       serialized['@_variant'] = element.variant;
     }
 
+    if (element.addrType) {
+      serialized['@_addrType'] = element.addrType;
+    }
+
     return serialized;
   }
 
@@ -339,15 +345,15 @@ export class PLCopenService implements vscode.Disposable {
         {
           id: 'rung_0',
           elements: [
-            { id: 'r0_e0', label: 'Start', type: 'contact', state: true, variant: 'no' },
-            { id: 'r0_e1', label: 'Motor', type: 'coil', state: false }
+            { id: 'r0_e0', label: 'X0', type: 'contact', state: true, variant: 'no', addrType: 'X' },
+            { id: 'r0_e1', label: 'Y0', type: 'coil', state: false, addrType: 'Y' }
           ],
           branches: [
             {
               id: 'r0_b0',
               elements: [
-                { id: 'r0_b0_e0', label: 'Aux', type: 'contact', state: true, variant: 'no' },
-                { id: 'r0_b0_e1', label: 'Motor', type: 'coil', state: false }
+                { id: 'r0_b0_e0', label: 'M0', type: 'contact', state: true, variant: 'no', addrType: 'M' },
+                { id: 'r0_b0_e1', label: 'Y0', type: 'coil', state: false, addrType: 'Y' }
               ],
               startColumn: 0,
               endColumn: 1
@@ -356,6 +362,13 @@ export class PLCopenService implements vscode.Disposable {
         }
       ]
     };
+  }
+
+  private inferAddrType(value: string | undefined): 'X' | 'M' | 'Y' | undefined {
+    if (!value) return undefined;
+    const c = String(value).trim().toUpperCase()[0];
+    if (c === 'X' || c === 'M' || c === 'Y') return c;
+    return undefined;
   }
 }
 

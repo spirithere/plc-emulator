@@ -22,7 +22,9 @@
     "onCommand:plcEmu.run",
     "onCommand:plcEmu.stop",
     "onView:plcPouExplorer",
-    "onView:plcRuntimeControls"
+    "onView:plcRuntimeControls",
+    "onCommand:plcEmu.openHmiDesigner",
+    "onCommand:plcEmu.openHmiRuntime"
   ],
   "contributes": {
     "commands": [
@@ -64,6 +66,18 @@
         "command": "plcEmu.stop",
         "title": "PLC Emulator: Stop Program",
         "icon": "$(stop)"
+      },
+      {
+        "command": "plcEmu.openHmiDesigner",
+        "title": "PLC Emulator: Open HMI Designer",
+        "icon": "$(layout)",
+        "category": "PLC Emulator"
+      },
+      {
+        "command": "plcEmu.openHmiRuntime",
+        "title": "PLC Emulator: Open HMI Runtime",
+        "icon": "$(screen-full)",
+        "category": "PLC Emulator"
       }
     ],
     "viewsContainers": {
@@ -124,6 +138,16 @@
           "when": "view == plcPouExplorer",
           "group": "navigation@6"
         },
+        {
+          "command": "plcEmu.openHmiDesigner",
+          "when": "view == plcPouExplorer",
+          "group": "navigation@7"
+        },
+        {
+          "command": "plcEmu.openHmiRuntime",
+          "when": "view == plcPouExplorer",
+          "group": "navigation@8"
+        },
 
         {
           "command": "plcEmu.run",
@@ -159,6 +183,16 @@
           "command": "plcEmu.switchProfile",
           "when": "view == plcRuntimeControls",
           "group": "navigation@6"
+        },
+        {
+          "command": "plcEmu.openHmiDesigner",
+          "when": "view == plcRuntimeControls",
+          "group": "navigation@7"
+        },
+        {
+          "command": "plcEmu.openHmiRuntime",
+          "when": "view == plcRuntimeControls",
+          "group": "navigation@8"
         }
       ]
     },
@@ -185,6 +219,11 @@
             "vendorB"
           ],
           "description": "Dialect profile that controls vendor-specific behavior (prototype)."
+        },
+        "plcEmu.hmiFile": {
+          "type": "string",
+          "default": ".plc/hmi.json",
+          "description": "Relative path to the HMI JSON file that defines widgets, layout and bindings."
         }
       }
     },

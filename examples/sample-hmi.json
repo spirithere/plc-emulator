@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "canvas": { "width": 800, "height": 480, "grid": 10, "background": "#1e1e1e" },
+  "pages": [
+    {
+      "id": "main",
+      "title": "Main",
+      "widgets": [
+        { "id": "btnStart", "type": "button", "variant": "momentary", "x": 40, "y": 60, "width": 120, "height": 40, "label": "Start", "binding": { "target": "input", "symbol": "I0" } },
+        { "id": "lampMotor", "type": "lamp", "x": 200, "y": 60, "width": 24, "height": 24, "label": "Motor", "binding": { "target": "output", "symbol": "Q0" }, "style": { "onColor": "#00ff88", "offColor": "#335" } },
+        { "id": "txtTitle", "type": "text", "x": 40, "y": 20, "width": 200, "height": 24, "text": "Sample HMI" }
+      ]
+    }
+  ]
+}
+

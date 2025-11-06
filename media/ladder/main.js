@@ -417,7 +417,29 @@ function createNodeCard(owner, collection, element, elementIndex) {
   const controls = document.createElement('div');
   controls.className = 'element-controls';
 
+  // Address selector (X/M/Y)
+  const addrSelector = document.createElement('select');
+  addrSelector.title = 'Address (X/M/Y)';
+  const addrOptions = ['X','M','Y'];
+  const currentAddr = element.addrType || inferAddrType(element.label) || 'X';
+  addrOptions.forEach(v => {
+    const opt = document.createElement('option');
+    opt.value = v; opt.textContent = v;
+    if (currentAddr === v) opt.selected = true;
+    addrSelector.appendChild(opt);
+  });
+  addrSelector.onchange = e => {
+    element.addrType = e.target.value;
+    // heuristic: if Y selected and symbol is contact, switch to coil for convenience
+    if (element.addrType === 'Y' && element.type === 'contact') {
+      element.type = 'coil';
+    }
+    render();
+  };
+  controls.appendChild(addrSelector);
+
   const typeSelector = document.createElement('select');
+  typeSelector.title = 'Symbol (contact/coil)';
   ['contact', 'coil'].forEach(optionValue => {
     const option = document.createElement('option');
     option.value = optionValue;
@@ -712,8 +734,16 @@ function createDefaultElement(scopeId) {
     label: 'Element',
     type: 'contact',
     variant: 'no',
-    state: false
+    state: false,
+    addrType: 'X'
   };
+}
+
+function inferAddrType(label) {
+  if (!label || typeof label !== 'string') return undefined;
+  const c = label.trim().toUpperCase()[0];
+  if (c === 'X' || c === 'M' || c === 'Y') return c;
+  return undefined;
 }
 
 render();

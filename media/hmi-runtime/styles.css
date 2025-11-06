@@ -1,0 +1,7 @@
+html, body { height: 100%; }
+body { margin: 0; color: var(--vscode-foreground); background: var(--vscode-editor-background); font-size: 12px; }
+#app { position: relative; width: 100%; height: 100%; }
+.widget { position: absolute; box-sizing: border-box; display: flex; align-items: center; justify-content: center; }
+.w-button { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: 1px solid var(--vscode-button-border); cursor: pointer; }
+.w-lamp { border-radius: 12px; border: 1px solid var(--vscode-panel-border); }
+.w-text { background: transparent; border: none; }

@@ -19,18 +19,18 @@ END_PROGRAM"></body>
   </types>
   <ladder>
     <rung @_id="rung_0">
-      <element @_id="rung_0_0" @_type="contact" @_label="X1" @_state="false" @_variant="no"></element>
-      <element @_id="rung_0_1" @_type="contact" @_label="X5" @_state="false" @_variant="nc"></element>
-      <element @_id="rung_0_2" @_type="coil" @_label="M0" @_state="false"></element>
+      <element @_id="rung_0_0" @_type="contact" @_label="X1" @_state="false" @_variant="no" @_addrType="X"></element>
+      <element @_id="rung_0_1" @_type="contact" @_label="X5" @_state="false" @_variant="nc" @_addrType="X"></element>
+      <element @_id="rung_0_2" @_type="coil" @_label="M0" @_state="false" @_addrType="M"></element>
       <parallel>
         <branch @_id="rung_branch_0_0" @_startColumn="0" @_endColumn="1">
-          <element @_id="0_0_0" @_type="contact" @_label="M0" @_state="false" @_variant="no"></element>
+          <element @_id="0_0_0" @_type="contact" @_label="M0" @_state="false" @_variant="no" @_addrType="M"></element>
         </branch>
       </parallel>
     </rung>
     <rung @_id="rung_1">
-      <element @_id="rung_1_0" @_type="contact" @_label="M0" @_state="false" @_variant="no"></element>
-      <element @_id="rung_1_1" @_type="coil" @_label="Y0" @_state="false"></element>
+      <element @_id="rung_1_0" @_type="contact" @_label="M0" @_state="false" @_variant="no" @_addrType="M"></element>
+      <element @_id="rung_1_1" @_type="coil" @_label="Y0" @_state="false" @_addrType="Y"></element>
     </rung>
   </ladder>
 </project>

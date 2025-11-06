@@ -8,6 +8,9 @@ import { IOPanelManager } from './io/ioPanel';
 import { ProfileManager } from './runtime/profileManager';
 import { POUTreeProvider } from './views/pouTree';
 import { RuntimeViewProvider } from './views/runtimeView';
+import { HmiService } from './hmi/hmiService';
+import { HmiDesignerPanelManager } from './hmi/hmiDesignerPanel';
+import { HmiRuntimePanelManager } from './hmi/hmiRuntimePanel';
 // Quick actions are now exposed as view title toolbar items via menus; no webview needed.
 
 let plcService: PLCopenService;
@@ -19,6 +22,9 @@ let profileManager: ProfileManager;
 let pouTreeProvider: POUTreeProvider;
 let runtimeViewProvider: RuntimeViewProvider;
 // no quickActionsViewProvider
+let hmiService: HmiService;
+let hmiDesigner: HmiDesignerPanelManager;
+let hmiRuntime: HmiRuntimePanelManager;
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   plcService = new PLCopenService();
@@ -29,6 +35,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   ladderManager = new LadderPanelManager(context.extensionUri, plcService, emulator);
   pouTreeProvider = new POUTreeProvider(plcService);
   runtimeViewProvider = new RuntimeViewProvider(context.extensionUri, emulator, ioService, profileManager);
+  hmiService = new HmiService();
+  hmiDesigner = new HmiDesignerPanelManager(context.extensionUri, hmiService, ioService);
+  hmiRuntime = new HmiRuntimePanelManager(context.extensionUri, hmiService, ioService, emulator);
   // Set up a context key to toggle Run/Stop toolbar items
   const setRunningContext = (running: boolean): Thenable<unknown> =>
     vscode.commands.executeCommand('setContext', 'plcEmu.running', running);
@@ -46,6 +55,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand('plcEmu.openStructuredTextBlock', (name: string) => openStructuredTextEditor(name)),
     vscode.commands.registerCommand('plcEmu.openLadderEditor', () => ladderManager.show()),
     vscode.commands.registerCommand('plcEmu.openIOSimulator', () => ioPanel.show()),
+    vscode.commands.registerCommand('plcEmu.openHmiDesigner', () => hmiDesigner.show()),
+    vscode.commands.registerCommand('plcEmu.openHmiRuntime', () => hmiRuntime.show()),
     vscode.commands.registerCommand('plcEmu.switchProfile', () => profileManager.selectProfile()),
     vscode.commands.registerCommand('plcEmu.run', () => emulator.start()),
     vscode.commands.registerCommand('plcEmu.stop', () => emulator.stop()),

@@ -55,6 +55,10 @@ export class EmulatorController {
     return this.running;
   }
 
+  public writeVariable(identifier: string, value: number | boolean): void {
+    this.variables.set(identifier, value);
+  }
+
   private scanCycle(): void {
     const pous = this.plcService.getStructuredTextBlocks();
     pous.forEach(block => this.executeStructuredText(block));
@@ -116,7 +120,7 @@ export class EmulatorController {
       const el = elements[i];
       let next = incoming;
       if (el.type === 'contact') {
-        const raw = this.resolveSignal(el.label, el.state ?? true);
+        const raw = this.resolveSignal(el.label, el.state ?? true, (el as any).addrType);
         const closed = el.variant === 'nc' ? !raw : raw;
         next = incoming && closed;
       } else if (el.type === 'coil') {
@@ -133,7 +137,7 @@ export class EmulatorController {
     let powerRail = initialPower;
     elements.forEach(element => {
       if (element.type === 'contact') {
-        const rawSignal = this.resolveSignal(element.label, element.state ?? true);
+        const rawSignal = this.resolveSignal(element.label, element.state ?? true, (element as any).addrType);
         const isClosed = element.variant === 'nc' ? !rawSignal : rawSignal;
         powerRail = powerRail && isClosed;
       } else if (element.type === 'coil') {
@@ -144,21 +148,17 @@ export class EmulatorController {
     return powerRail;
   }
 
-  private resolveSignal(label: string, fallback: boolean): boolean {
-    const ioValue = this.ioService.getInputValue(label);
-    if (ioValue !== undefined) {
-      return ioValue;
+  private resolveSignal(label: string, fallback: boolean, addrType?: 'X'|'M'|'Y'): boolean {
+    const addr = addrType || this.inferAddrType(label);
+    if (addr === 'X') {
+      const ioValue = this.ioService.getInputValue(label);
+      if (ioValue !== undefined) return ioValue;
     }
-
     if (!this.variables.has(label)) {
       this.variables.set(label, fallback);
     }
-
     const value = this.variables.get(label);
-    if (typeof value === 'number') {
-      return value !== 0;
-    }
-
+    if (typeof value === 'number') return value !== 0;
     return Boolean(value);
   }
 
@@ -211,6 +211,13 @@ export class EmulatorController {
       return ioValue;
     }
 
+    return undefined;
+  }
+
+  private inferAddrType(identifier: string | undefined): 'X' | 'M' | 'Y' | undefined {
+    if (!identifier) return undefined;
+    const c = String(identifier).trim().toUpperCase()[0];
+    if (c === 'X' || c === 'M' || c === 'Y') return c;
     return undefined;
   }
 }
