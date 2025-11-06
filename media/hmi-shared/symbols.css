@@ -1,0 +1,249 @@
+/* Shared widget visuals for HMI Designer & Runtime */
+
+.widget-label {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  bottom: 2px;
+  text-align: center;
+  font-size: 11px;
+  opacity: 0.85;
+  pointer-events: none;
+  letter-spacing: 0.2px;
+}
+
+/* Lamp */
+.svg-lamp { width: 100%; height: 100%; display: block; }
+.lamp-core { fill: var(--lamp-off, #2b2b2b); transition: fill 0.25s ease; }
+.lamp-rim { stroke: #00000055; stroke-width: 4; }
+.lamp-glow { opacity: 0; transition: opacity 0.25s ease; }
+.w-lamp.is-on .lamp-core { fill: var(--lamp-on, #16ff8a); }
+.w-lamp.is-on .lamp-glow { opacity: 0.9; filter: drop-shadow(0 0 14px var(--lamp-on, #16ff8a)); }
+
+/* Motor */
+.svg-motor { width: 100%; height: 100%; display: block; }
+.motor-body { fill: #0b1320; stroke: #1f2b45; stroke-width: 2; }
+.motor-shaft { fill: #9aa4b2; }
+.motor-hub { fill: var(--motor-color, #42baf9); }
+.motor-blade { fill: var(--motor-color, #42baf9); opacity: 0.9; }
+.motor-blades { transform-origin: 80px 50px; animation: motor-spin 1.2s linear infinite; animation-play-state: paused; }
+.w-motor.is-on .motor-blades { animation-play-state: running; }
+
+@keyframes motor-spin { to { transform: rotate(360deg); } }
+
+/* Fan */
+.svg-fan { width: 100%; height: 100%; display: block; }
+.fan-body { fill: transparent; stroke: #1f2937; stroke-width: 3; }
+.fan-guard { fill: none; stroke: #1f2937aa; stroke-width: 2; stroke-dasharray: 6 6; }
+.fan-hub { fill: var(--fan-color, #60a5fa); }
+.fan-blades { transform-origin: 50px 50px; animation: fan-spin 0.8s linear infinite; animation-play-state: paused; }
+.fan-blade { fill: var(--fan-color, #60a5fa); opacity: 0.9; }
+.w-fan.is-on .fan-blades { animation-play-state: running; }
+
+@keyframes fan-spin { to { transform: rotate(360deg); } }
+
+/* Pump */
+.svg-pump { width: 100%; height: 100%; display: block; }
+.pump-body { fill: #10213b; stroke: #1f345a; stroke-width: 2; }
+.pump-impeller { fill: var(--pump-color, #38bdf8); transform-origin: 50px 50px; animation: pump-spin 1s linear infinite; animation-play-state: paused; }
+.pump-arrow { fill: none; stroke: var(--pump-color, #38bdf8); stroke-width: 3; stroke-linecap: round; stroke-dasharray: 14 18; stroke-dashoffset: 0; animation: pump-flow 1.4s linear infinite; animation-play-state: paused; }
+.w-pump.is-on .pump-impeller { animation-play-state: running; }
+.w-pump.is-on .pump-arrow { animation-play-state: running; }
+
+@keyframes pump-spin { to { transform: rotate(360deg); } }
+@keyframes pump-flow { to { stroke-dashoffset: -32; } }
+
+/* Cylinder */
+.svg-cylinder { width: 100%; height: 100%; display: block; }
+.cyl-rail { fill: #121a26; stroke: #273142; stroke-width: 2; }
+.cyl-head { fill: var(--cyl-color, #a78bfa); opacity: 0.9; }
+.cyl-rod { fill: var(--cyl-color, #a78bfa); transform-origin: 14px 50px; transition: transform 0.25s ease; }
+.w-cylinder.is-on .cyl-rod { transform: translateX(40px); }
+
+/* Valve */
+.svg-valve { width: 100%; height: 100%; display: block; }
+.valve-body { fill: #0f172a; stroke: #1e293b; stroke-width: 2; }
+.valve-gate { fill: var(--valve-color, #facc15); transform-origin: 50px 50px; transition: transform 0.25s ease; }
+.w-valve.is-on .valve-gate { transform: rotate(0deg); }
+.w-valve:not(.is-on) .valve-gate { transform: rotate(90deg); }
+.valve-flow { fill: none; stroke: var(--valve-color, #facc15); stroke-dasharray: 10 10; stroke-width: 3; opacity: 0.25; }
+
+/* Buttons */
+.btn-skin {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--vscode-button-foreground);
+  background: linear-gradient(180deg, rgba(255,255,255,0.07), rgba(0,0,0,0.25)), var(--vscode-button-background);
+  border: 1px solid var(--vscode-button-border);
+  border-radius: 8px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.05), 0 6px 16px rgba(0,0,0,0.28);
+  transition: transform 0.06s ease, box-shadow 0.12s ease, filter 0.12s ease;
+}
+.w-button:hover .btn-skin { filter: brightness(1.05); }
+.w-button.is-pressed .btn-skin { transform: translateY(1px) scale(0.99); box-shadow: inset 0 1px 0 rgba(0,0,0,0.28), 0 2px 6px rgba(0,0,0,0.18); }
+.w-button.is-on .btn-skin { outline: 2px solid var(--vscode-focusBorder); }
+.btn-label { padding: 0 10px; font-weight: 600; letter-spacing: 0.2px; text-transform: uppercase; }
+.btn-label.small { font-size: 11px; letter-spacing: 0.4px; }
+
+.btn-ripple {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  pointer-events: none;
+  background: currentColor;
+  opacity: 0.35;
+  transform: translate(-50%, -50%) scale(1);
+  animation: ripple 0.45s ease-out forwards;
+}
+
+@keyframes ripple {
+  to { opacity: 0; transform: translate(-50%, -50%) scale(22); }
+}
+
+/* Switch */
+.switch-skin { position: relative; width: 100%; height: 100%; display: grid; grid-template-rows: 1fr auto; align-items: center; }
+.sw-track {
+  position: relative;
+  width: 100%;
+  height: 60%;
+  min-height: 22px;
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 999px;
+  box-shadow: inset 0 2px 6px rgba(0,0,0,0.25);
+  overflow: hidden;
+}
+.sw-knob {
+  position: absolute;
+  top: 50%;
+  left: 4px;
+  transform: translate(0, -50%);
+  width: calc(40% - 4px);
+  min-width: 18px;
+  aspect-ratio: 1 / 1;
+  background: linear-gradient(180deg, rgba(255,255,255,0.4), rgba(0,0,0,0.35)), var(--vscode-editor-background);
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 50%;
+  transition: transform 0.2s ease;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+}
+.w-switch.is-on .sw-knob { transform: translate(calc(150% + 4px), -50%); }
+.sw-label { margin-top: 4px; font-size: 11px; text-align: center; opacity: 0.85; text-transform: uppercase; letter-spacing: 0.4px; }
+
+/* Gauge */
+.gauge-skin { position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
+.gauge-svg { width: 100%; height: 100%; display: block; }
+.gauge-arc { fill: none; stroke: var(--gauge-arc, #334155); stroke-width: 8; stroke-linecap: round; opacity: 0.7; }
+.gauge-arc-active { stroke: var(--gauge-active, #38bdf8); opacity: 0.95; }
+.gauge-tick { stroke: rgba(255,255,255,0.45); stroke-width: 2; }
+.gauge-needle { fill: var(--gauge-needle, #f87171); transform-origin: 50px 60px; transition: transform 0.25s ease; }
+.gauge-cap { fill: #111827; stroke: #1f2937; stroke-width: 2; }
+.gauge-value { position: absolute; bottom: 14px; left: 0; right: 0; text-align: center; font-size: 12px; font-weight: 600; letter-spacing: 0.8px; }
+
+/* Tank */
+.tank-skin { position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
+.tank-body {
+  position: relative;
+  width: 70%;
+  height: 90%;
+  border: 2px solid rgba(255,255,255,0.12);
+  border-radius: 10px 10px 6px 6px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.05), rgba(0,0,0,0.4));
+  overflow: hidden;
+  box-shadow: inset 0 0 12px rgba(0,0,0,0.35);
+}
+.tank-fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 50%;
+  background: linear-gradient(180deg, rgba(255,255,255,0.3), rgba(255,255,255,0)), var(--tank-fill, #22d3ee);
+  border-top: 1px solid rgba(255,255,255,0.4);
+  transition: height 0.25s ease;
+}
+.tank-level-lines {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  bottom: 4px;
+  top: 4px;
+  background-image: linear-gradient(to top, rgba(255,255,255,0.1) 1px, transparent 1px);
+  background-size: 100% 12%;
+  pointer-events: none;
+}
+.tank-value { position: absolute; top: 6px; left: 0; right: 0; text-align: center; font-size: 11px; letter-spacing: 0.3px; opacity: 0.85; }
+
+/* Numeric display */
+.numeric-display {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: #101826;
+  border: 1px solid rgba(148,163,184,0.4);
+  border-radius: 6px;
+  color: #f8fafc;
+  font-family: 'SFMono-Regular', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  letter-spacing: 0.4px;
+  box-shadow: inset 0 1px 4px rgba(0,0,0,0.45);
+}
+
+/* Slider skin */
+.slider-skin { width: 100%; position: relative; }
+.slider-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 6px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.15), rgba(0,0,0,0.35));
+  border-radius: 999px;
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.4);
+}
+.slider-thumb {
+  position: absolute;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, rgba(255,255,255,0.6), rgba(0,0,0,0.5));
+  border: 2px solid var(--vscode-focusBorder);
+  transform: translate(-50%, -50%);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.35);
+  transition: left 0.2s ease;
+}
+.slider-control {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: col-resize;
+}
+
+.numeric-control {
+  position: absolute;
+  inset: 6px;
+  width: calc(100% - 12px);
+  height: calc(100% - 12px);
+  background: transparent;
+  border: none;
+  color: transparent;
+  caret-color: var(--vscode-focusBorder);
+  opacity: 0;
+}
+.numeric-control:focus { outline: none; }
+
+/* General states */
+.widget.is-alert { box-shadow: 0 0 14px rgba(248,113,113,0.45); }
+.widget.is-flow { box-shadow: 0 0 18px rgba(14,165,233,0.35); }

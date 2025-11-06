@@ -73,7 +73,12 @@
             { "$ref": "#/$defs/w_lamp" },
             { "$ref": "#/$defs/w_text" },
             { "$ref": "#/$defs/w_motor" },
-            { "$ref": "#/$defs/w_cylinder" }
+            { "$ref": "#/$defs/w_cylinder" },
+            { "$ref": "#/$defs/w_fan" },
+            { "$ref": "#/$defs/w_pump" },
+            { "$ref": "#/$defs/w_valve" },
+            { "$ref": "#/$defs/w_gauge" },
+            { "$ref": "#/$defs/w_tank" }
           ]
         }
       ]
@@ -102,6 +107,7 @@
         "min": { "type": "number" },
         "max": { "type": "number" },
         "step": { "type": "number" },
+        "previewValue": { "type": "number" },
         "binding": { "$ref": "#/$defs/binding" }
       },
       "additionalProperties": true
@@ -110,6 +116,9 @@
       "type": "object",
       "properties": {
         "type": { "const": "numeric" },
+        "precision": { "type": "integer", "minimum": 0 },
+        "unit": { "type": "string" },
+        "previewValue": { "type": "number" },
         "binding": { "$ref": "#/$defs/binding" }
       },
       "additionalProperties": true
@@ -142,7 +151,14 @@
       "type": "object",
       "properties": {
         "type": { "const": "motor" },
-        "binding": { "$ref": "#/$defs/binding" }
+        "binding": { "$ref": "#/$defs/binding" },
+        "style": {
+          "type": "object",
+          "properties": {
+            "color": { "type": "string" }
+          },
+          "additionalProperties": false
+        }
       },
       "additionalProperties": true
     },
@@ -150,10 +166,95 @@
       "type": "object",
       "properties": {
         "type": { "const": "cylinder" },
-        "binding": { "$ref": "#/$defs/binding" }
+        "binding": { "$ref": "#/$defs/binding" },
+        "style": {
+          "type": "object",
+          "properties": {
+            "color": { "type": "string" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": true
+    },
+    "w_fan": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "fan" },
+        "binding": { "$ref": "#/$defs/binding" },
+        "style": {
+          "type": "object",
+          "properties": { "color": { "type": "string" } },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": true
+    },
+    "w_pump": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "pump" },
+        "binding": { "$ref": "#/$defs/binding" },
+        "style": {
+          "type": "object",
+          "properties": { "color": { "type": "string" } },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": true
+    },
+    "w_valve": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "valve" },
+        "binding": { "$ref": "#/$defs/binding" },
+        "orientation": { "enum": ["horizontal", "vertical"] },
+        "style": {
+          "type": "object",
+          "properties": { "color": { "type": "string" } },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": true
+    },
+    "w_gauge": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "gauge" },
+        "binding": { "$ref": "#/$defs/binding" },
+        "min": { "type": "number" },
+        "max": { "type": "number" },
+        "unit": { "type": "string" },
+        "precision": { "type": "integer", "minimum": 0 },
+        "previewValue": { "type": "number" },
+        "style": {
+          "type": "object",
+          "properties": {
+            "arcColor": { "type": "string" },
+            "activeColor": { "type": "string" },
+            "needleColor": { "type": "string" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": true
+    },
+    "w_tank": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "tank" },
+        "binding": { "$ref": "#/$defs/binding" },
+        "min": { "type": "number" },
+        "max": { "type": "number" },
+        "unit": { "type": "string" },
+        "previewValue": { "type": "number" },
+        "style": {
+          "type": "object",
+          "properties": { "fillColor": { "type": "string" } },
+          "additionalProperties": false
+        }
       },
       "additionalProperties": true
     }
   }
 }
-

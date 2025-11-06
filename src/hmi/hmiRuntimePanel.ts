@@ -91,6 +91,8 @@ export class HmiRuntimePanelManager {
   private getHtml(webview: vscode.Webview): string {
     const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'media', 'hmi-runtime', 'main.js'));
     const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'media', 'hmi-runtime', 'styles.css'));
+    const sharedStyleUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'media', 'hmi-shared', 'symbols.css'));
+    const sharedScriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'media', 'hmi-shared', 'symbols.js'));
     const nonce = getNonce();
     return `<!DOCTYPE html>
 <html lang="ja">
@@ -98,11 +100,13 @@ export class HmiRuntimePanelManager {
     <meta charset="UTF-8">
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link href="${sharedStyleUri}" rel="stylesheet" />
     <link href="${styleUri}" rel="stylesheet" />
     <title>PLC HMI Runtime</title>
   </head>
   <body>
     <div id="app"></div>
+    <script nonce="${nonce}" src="${sharedScriptUri}"></script>
     <script nonce="${nonce}" src="${scriptUri}"></script>
   </body>
   </html>`;

@@ -83,6 +83,8 @@ export class HmiDesignerPanelManager {
   private getHtml(webview: vscode.Webview): string {
     const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'media', 'hmi-designer', 'main.js'));
     const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'media', 'hmi-designer', 'styles.css'));
+    const sharedStyleUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'media', 'hmi-shared', 'symbols.css'));
+    const sharedScriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'media', 'hmi-shared', 'symbols.js'));
     const nonce = getNonce();
     return `<!DOCTYPE html>
 <html lang="ja">
@@ -90,6 +92,7 @@ export class HmiDesignerPanelManager {
     <meta charset="UTF-8">
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link href="${sharedStyleUri}" rel="stylesheet" />
     <link href="${styleUri}" rel="stylesheet" />
     <title>PLC HMI Designer</title>
   </head>
@@ -97,14 +100,20 @@ export class HmiDesignerPanelManager {
     <div id="toolbar">
       <button id="btnLoad">Load</button>
       <button id="btnSave">Save</button>
-      <span class="sep"></span>
+      <span class="flex-spacer"></span>
       <button data-widget="button">+ Button</button>
       <button data-widget="switch">+ Switch</button>
-      <button data-widget="slider">+ Slider</button>
-      <button data-widget="numeric">+ Numeric</button>
       <button data-widget="lamp">+ Lamp</button>
       <button data-widget="motor">+ Motor</button>
+      <button data-widget="fan">+ Fan</button>
+      <button data-widget="pump">+ Pump</button>
       <button data-widget="cylinder">+ Cylinder</button>
+      <button data-widget="valve">+ Valve</button>
+      <span class="sep"></span>
+      <button data-widget="slider">+ Slider</button>
+      <button data-widget="numeric">+ Numeric</button>
+      <button data-widget="gauge">+ Gauge</button>
+      <button data-widget="tank">+ Tank</button>
       <button data-widget="text">+ Text</button>
     </div>
     <div id="workspace">
@@ -114,6 +123,7 @@ export class HmiDesignerPanelManager {
         <div id="props-content"></div>
       </div>
     </div>
+    <script nonce="${nonce}" src="${sharedScriptUri}"></script>
     <script nonce="${nonce}" src="${scriptUri}"></script>
   </body>
   </html>`;

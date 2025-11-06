@@ -15,6 +15,7 @@
   }
 
   function uid(prefix) { return `${prefix}_${Math.random().toString(36).slice(2, 8)}`; }
+  function displayLabel(type) { return type ? type.charAt(0).toUpperCase() + type.slice(1) : ''; }
 
   function currentPage() { return state.hmi?.pages?.[0]; }
 
@@ -45,7 +46,7 @@
       node.style.height = (w.height || 32) + 'px';
       node.dataset.id = w.id;
 
-      applyVisual(node, w);
+      decorateWidget(node, w);
 
       enableDrag(node, w);
       attachResize(node, w);
@@ -73,20 +74,81 @@
     props.appendChild(row('Y', number(w.y || 0, v => { w.y = v; rerenderSel(w.id); }))); 
     props.appendChild(row('Width', number(w.width || 80, v => { w.width = v; rerenderSel(w.id); }))); 
     props.appendChild(row('Height', number(w.height || 32, v => { w.height = v; rerenderSel(w.id); })));
-    if (w.type === 'text') {
-      props.appendChild(row('Text', input(w.text || '', v => { w.text = v; rerenderSel(w.id); })));
-    }
-    if (w.type === 'button') {
-      const variants = ['momentary','toggle'];
-      props.appendChild(row('Variant', dropdown(variants, w.variant || 'momentary', v => { w.variant = v; })));
-    }
-    if (w.type === 'lamp' || w.type === 'motor' || w.type === 'cylinder' || w.type === 'button' || w.type === 'switch') {
-      props.appendChild(row('Preview On', checkbox(!!w.previewOn, v => { w.previewOn = v; rerenderSel(w.id); })));
-    }
-    if (w.type === 'lamp') {
-      const st = w.style || {};
-      props.appendChild(row('On Color', color(st.onColor || '#16ff8a', v => { w.style = { ...(w.style||{}), onColor: v }; rerenderSel(w.id); })));
-      props.appendChild(row('Off Color', color(st.offColor || '#2b2b2b', v => { w.style = { ...(w.style||{}), offColor: v }; rerenderSel(w.id); })));
+    switch (w.type) {
+      case 'text': {
+        props.appendChild(row('Text', input(w.text || '', v => { w.text = v; rerenderSel(w.id); })));
+        break;
+      }
+      case 'button': {
+        const variants = ['momentary', 'toggle'];
+        props.appendChild(row('Variant', dropdown(variants, w.variant || 'momentary', v => { w.variant = v; rerenderSel(w.id); })));
+        props.appendChild(row('Preview On', checkbox(!!w.previewOn, v => { w.previewOn = v; rerenderSel(w.id); })));
+        break;
+      }
+      case 'switch': {
+        props.appendChild(row('Preview On', checkbox(!!w.previewOn, v => { w.previewOn = v; rerenderSel(w.id); })));
+        break;
+      }
+      case 'lamp': {
+        props.appendChild(row('Preview On', checkbox(!!w.previewOn, v => { w.previewOn = v; rerenderSel(w.id); })));
+        const st = w.style || {};
+        props.appendChild(row('On Color', color(st.onColor || '#16ff8a', v => { w.style = { ...(w.style || {}), onColor: v }; rerenderSel(w.id); })));
+        props.appendChild(row('Off Color', color(st.offColor || '#1f2937', v => { w.style = { ...(w.style || {}), offColor: v }; rerenderSel(w.id); })));
+        break;
+      }
+      case 'motor':
+      case 'fan':
+      case 'pump':
+      case 'cylinder': {
+        props.appendChild(row('Preview On', checkbox(!!w.previewOn, v => { w.previewOn = v; rerenderSel(w.id); })));
+        const st = w.style || {};
+        props.appendChild(row('Accent Color', color(st.color || getDefaultAccent(w.type), v => { w.style = { ...(w.style || {}), color: v }; rerenderSel(w.id); })));
+        break;
+      }
+      case 'valve': {
+        props.appendChild(row('Preview On', checkbox(!!w.previewOn, v => { w.previewOn = v; rerenderSel(w.id); })));
+        const st = w.style || {};
+        props.appendChild(row('Accent Color', color(st.color || '#facc15', v => { w.style = { ...(w.style || {}), color: v }; rerenderSel(w.id); })));
+        const orient = ['horizontal', 'vertical'];
+        props.appendChild(row('Orientation', dropdown(orient, w.orientation || 'horizontal', v => { w.orientation = v; rerenderSel(w.id); })));
+        break;
+      }
+      case 'gauge': {
+        props.appendChild(row('Min', number(w.min ?? 0, v => { w.min = v; rerenderSel(w.id); })));
+        props.appendChild(row('Max', number(w.max ?? 100, v => { w.max = v; rerenderSel(w.id); })));
+        props.appendChild(row('Precision', number(w.precision ?? 0, v => { w.precision = Math.max(0, Math.round(v)); rerenderSel(w.id); })));
+        props.appendChild(row('Unit', input(w.unit || '', v => { w.unit = v; rerenderSel(w.id); })));
+        props.appendChild(row('Preview Value', number(w.previewValue ?? getPreviewValue(w), v => { w.previewValue = v; rerenderSel(w.id); })));
+        const st = w.style || {};
+        props.appendChild(row('Arc Color', color(st.arcColor || '#334155', v => { w.style = { ...(w.style || {}), arcColor: v }; rerenderSel(w.id); })));
+        props.appendChild(row('Active Color', color(st.activeColor || '#38bdf8', v => { w.style = { ...(w.style || {}), activeColor: v }; rerenderSel(w.id); })));
+        props.appendChild(row('Needle Color', color(st.needleColor || '#f87171', v => { w.style = { ...(w.style || {}), needleColor: v }; rerenderSel(w.id); })));
+        break;
+      }
+      case 'tank': {
+        props.appendChild(row('Min', number(w.min ?? 0, v => { w.min = v; rerenderSel(w.id); })));
+        props.appendChild(row('Max', number(w.max ?? 100, v => { w.max = v; rerenderSel(w.id); })));
+        props.appendChild(row('Unit', input(w.unit || '', v => { w.unit = v; rerenderSel(w.id); })));
+        props.appendChild(row('Preview Value', number(w.previewValue ?? getPreviewValue(w), v => { w.previewValue = v; rerenderSel(w.id); })));
+        const st = w.style || {};
+        props.appendChild(row('Fill Color', color(st.fillColor || '#22d3ee', v => { w.style = { ...(w.style || {}), fillColor: v }; rerenderSel(w.id); })));
+        break;
+      }
+      case 'slider': {
+        props.appendChild(row('Min', number(w.min ?? 0, v => { w.min = v; rerenderSel(w.id); })));
+        props.appendChild(row('Max', number(w.max ?? 100, v => { w.max = v; rerenderSel(w.id); })));
+        props.appendChild(row('Step', number(w.step ?? 1, v => { w.step = v; rerenderSel(w.id); })));
+        props.appendChild(row('Preview Value', number(w.previewValue ?? getPreviewValue(w), v => { w.previewValue = v; rerenderSel(w.id); })));
+        break;
+      }
+      case 'numeric': {
+        props.appendChild(row('Precision', number(w.precision ?? 0, v => { w.precision = Math.max(0, Math.round(v)); rerenderSel(w.id); })));
+        props.appendChild(row('Unit', input(w.unit || '', v => { w.unit = v; rerenderSel(w.id); })));
+        props.appendChild(row('Preview Value', number(w.previewValue ?? getPreviewValue(w), v => { w.previewValue = v; rerenderSel(w.id); })));
+        break;
+      }
+      default:
+        break;
     }
     // binding with rules and suggestions
     const b = w.binding || { target: defaultTargetFor(w.type), symbol: '' };
@@ -177,130 +239,72 @@
     return i;
   }
 
-  // === Symbol rendering (SVG) ===
-  function applyVisual(node, w) {
+  // === Symbol rendering ===
+  function decorateWidget(node, widget) {
+    const factory = window.HmiSymbols;
+    const context = {
+      mode: 'designer',
+      on: isBooleanWidget(widget.type) ? Boolean(widget.previewOn) : undefined,
+      value: getPreviewValue(widget),
+      label: widget.label
+    };
+    if (factory && typeof factory.decorate === 'function') {
+      const handled = factory.decorate(widget, node, context);
+      if (handled) { return; }
+    }
+
     node.innerHTML = '';
-    node.classList.toggle('is-on', !!w.previewOn);
-    if (w.type === 'text') {
+    if (widget.type === 'text') {
       const t = document.createElement('div');
       t.className = 'w-text-inner';
-      t.textContent = w.text || w.label || 'Text';
+      t.textContent = widget.text || widget.label || 'Text';
       node.appendChild(t);
       return;
     }
-    if (w.type === 'lamp') {
-      const on = !!w.previewOn;
-      const onColor = (w.style?.onColor) || '#16ff8a';
-      const offColor = (w.style?.offColor) || '#1f2937';
-      node.style.setProperty('--lamp-on', onColor);
-      node.style.setProperty('--lamp-off', offColor);
-      node.appendChild(svgLamp());
-      if (w.label) node.appendChild(labelEl(w.label));
-      if (on) node.classList.add('is-on'); else node.classList.remove('is-on');
-      return;
-    }
-    if (w.type === 'button') {
-      const wrap = document.createElement('div');
-      wrap.className = 'btn-skin';
-      const lab = document.createElement('span'); lab.className = 'btn-label'; lab.textContent = w.label || 'Button';
-      wrap.appendChild(lab);
-      if (w.previewOn || (w.variant === 'toggle' && w.previewOn)) node.classList.add('is-on'); else node.classList.remove('is-on');
-      node.appendChild(wrap);
-      return;
-    }
-    if (w.type === 'switch') {
-      const s = buildSwitchSkin(w.label || 'Switch');
-      if (w.previewOn) node.classList.add('is-on'); else node.classList.remove('is-on');
-      node.appendChild(s);
-      return;
-    }
-    if (w.type === 'motor') {
-      const on = !!w.previewOn;
-      const color = (w.style?.color) || '#42baf9';
-      node.style.setProperty('--motor-color', color);
-      node.appendChild(svgMotor());
-      if (w.label) node.appendChild(labelEl(w.label));
-      if (on) node.classList.add('is-on'); else node.classList.remove('is-on');
-      return;
-    }
-    if (w.type === 'cylinder') {
-      const on = !!w.previewOn; // extended
-      const color = (w.style?.color) || '#a78bfa';
-      node.style.setProperty('--cyl-color', color);
-      node.appendChild(svgCylinder());
-      if (w.label) node.appendChild(labelEl(w.label));
-      if (on) node.classList.add('is-on'); else node.classList.remove('is-on');
-      return;
-    }
-    // default box
     const box = document.createElement('div');
     box.className = 'w-generic';
-    box.textContent = w.label || w.type;
+    box.textContent = widget.label || widget.type;
     node.appendChild(box);
   }
 
-  function labelEl(text) {
-    const l = document.createElement('div');
-    l.className = 'widget-label';
-    l.textContent = text;
-    return l;
+  function isBooleanWidget(type) {
+    return ['button', 'switch', 'lamp', 'motor', 'fan', 'pump', 'cylinder', 'valve'].includes(type);
   }
 
-  function svgLamp() {
-    const wrap = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    wrap.setAttribute('viewBox', '0 0 100 100');
-    wrap.setAttribute('class', 'svg-lamp');
-    const defs = document.createElementNS(wrap.namespaceURI, 'defs');
-    const rg = document.createElementNS(wrap.namespaceURI, 'radialGradient');
-    rg.setAttribute('id', 'lg');
-    let stop1 = document.createElementNS(wrap.namespaceURI, 'stop'); stop1.setAttribute('offset','0%'); stop1.setAttribute('stop-color','white'); stop1.setAttribute('stop-opacity','0.95');
-    let stop2 = document.createElementNS(wrap.namespaceURI, 'stop'); stop2.setAttribute('offset','60%'); stop2.setAttribute('stop-color','white'); stop2.setAttribute('stop-opacity','0.2');
-    let stop3 = document.createElementNS(wrap.namespaceURI, 'stop'); stop3.setAttribute('offset','100%'); stop3.setAttribute('stop-color','black'); stop3.setAttribute('stop-opacity','0');
-    rg.appendChild(stop1); rg.appendChild(stop2); rg.appendChild(stop3);
-    defs.appendChild(rg); wrap.appendChild(defs);
-    const glow = document.createElementNS(wrap.namespaceURI, 'circle'); glow.setAttribute('cx','50'); glow.setAttribute('cy','50'); glow.setAttribute('r','40'); glow.setAttribute('class','lamp-glow'); glow.setAttribute('fill','url(#lg)');
-    const core = document.createElementNS(wrap.namespaceURI, 'circle'); core.setAttribute('cx','50'); core.setAttribute('cy','50'); core.setAttribute('r','26'); core.setAttribute('class','lamp-core');
-    const rim = document.createElementNS(wrap.namespaceURI, 'circle'); rim.setAttribute('cx','50'); rim.setAttribute('cy','50'); rim.setAttribute('r','30'); rim.setAttribute('class','lamp-rim'); rim.setAttribute('fill','none');
-    wrap.appendChild(glow); wrap.appendChild(rim); wrap.appendChild(core);
-    return wrap;
-  }
-
-  function svgMotor() {
-    const ns = 'http://www.w3.org/2000/svg';
-    const svg = document.createElementNS(ns, 'svg');
-    svg.setAttribute('viewBox', '0 0 100 100');
-    svg.setAttribute('class', 'svg-motor');
-    const body = document.createElementNS(ns, 'rect'); body.setAttribute('x','18'); body.setAttribute('y','30'); body.setAttribute('width','50'); body.setAttribute('height','40'); body.setAttribute('rx','6'); body.setAttribute('class','motor-body');
-    const shaft = document.createElementNS(ns, 'rect'); shaft.setAttribute('x','68'); shaft.setAttribute('y','46'); shaft.setAttribute('width','12'); shaft.setAttribute('height','8'); shaft.setAttribute('rx','2'); shaft.setAttribute('class','motor-shaft');
-    const hub = document.createElementNS(ns, 'circle'); hub.setAttribute('cx','80'); hub.setAttribute('cy','50'); hub.setAttribute('r','6'); hub.setAttribute('class','motor-hub');
-    const blades = document.createElementNS(ns, 'g'); blades.setAttribute('class','motor-blades');
-    for (let i=0;i<3;i++) {
-      const p = document.createElementNS(ns, 'path');
-      p.setAttribute('d','M80 50 L94 46 Q98 50 94 54 Z');
-      p.setAttribute('transform', `rotate(${i*120} 80 50)`);
-      p.setAttribute('class','motor-blade');
-      blades.appendChild(p);
+  function getPreviewValue(widget) {
+    if (widget.previewValue !== undefined && widget.previewValue !== null && widget.previewValue !== '') {
+      const num = Number(widget.previewValue);
+      if (!Number.isNaN(num)) { return num; }
     }
-    svg.appendChild(body); svg.appendChild(shaft); svg.appendChild(hub); svg.appendChild(blades);
-    return svg;
+    switch (widget.type) {
+      case 'gauge':
+      case 'tank': {
+        const min = Number.isFinite(widget.min) ? Number(widget.min) : 0;
+        const max = Number.isFinite(widget.max) ? Number(widget.max) : min + 100;
+        return min + (max - min) / 2;
+      }
+      case 'slider':
+        return Number.isFinite(widget.min) ? Number(widget.min) : 0;
+      case 'numeric':
+        return 0;
+      default:
+        return undefined;
+    }
   }
 
-  function svgCylinder() {
-    const ns = 'http://www.w3.org/2000/svg';
-    const svg = document.createElementNS(ns, 'svg'); svg.setAttribute('viewBox','0 0 100 100'); svg.setAttribute('class','svg-cylinder');
-    const rail = document.createElementNS(ns, 'rect'); rail.setAttribute('x','10'); rail.setAttribute('y','44'); rail.setAttribute('width','80'); rail.setAttribute('height','12'); rail.setAttribute('rx','6'); rail.setAttribute('class','cyl-rail');
-    const rod = document.createElementNS(ns, 'rect'); rod.setAttribute('x','14'); rod.setAttribute('y','47'); rod.setAttribute('width','28'); rod.setAttribute('height','6'); rod.setAttribute('rx','3'); rod.setAttribute('class','cyl-rod');
-    const head = document.createElementNS(ns, 'circle'); head.setAttribute('cx','22'); head.setAttribute('cy','50'); head.setAttribute('r','10'); head.setAttribute('class','cyl-head');
-    svg.appendChild(rail); svg.appendChild(rod); svg.appendChild(head);
-    return svg;
-  }
-
-  function buildSwitchSkin(text) {
-    const root = document.createElement('div'); root.className = 'switch-skin';
-    const track = document.createElement('div'); track.className = 'sw-track';
-    const knob = document.createElement('div'); knob.className = 'sw-knob';
-    const lbl = document.createElement('div'); lbl.className = 'sw-label'; lbl.textContent = text || '';
-    track.appendChild(knob); root.appendChild(track); root.appendChild(lbl); return root;
+  function getDefaultAccent(type) {
+    switch (type) {
+      case 'motor':
+        return '#42baf9';
+      case 'fan':
+        return '#60a5fa';
+      case 'pump':
+        return '#38bdf8';
+      case 'cylinder':
+        return '#a78bfa';
+      default:
+        return '#38bdf8';
+    }
   }
 
   function toHexColor(v) {
@@ -361,9 +365,46 @@
   function addWidget(type) {
     if (!state.hmi) return;
     const page = currentPage();
-    const w = { id: uid(type), type, x: 20, y: 20, width: 100, height: 36, label: type };
-    if (type === 'lamp') { w.width = 24; w.height = 24; }
-    if (type === 'text') { w.width = 120; w.height = 20; w.text = 'Text'; }
+    const w = { id: uid(type), type, x: 20, y: 20, width: 110, height: 40, label: displayLabel(type) };
+    switch (type) {
+      case 'lamp':
+        w.width = 48; w.height = 48; w.style = { onColor: '#16ff8a', offColor: '#1f2937' };
+        break;
+      case 'button':
+        w.width = 150; w.height = 54; w.variant = 'momentary'; w.label = 'START';
+        break;
+      case 'switch':
+        w.width = 130; w.height = 62; w.label = 'SWITCH';
+        break;
+      case 'motor':
+      case 'fan':
+      case 'pump':
+        w.width = 96; w.height = 96; w.style = { color: getDefaultAccent(type) };
+        break;
+      case 'cylinder':
+        w.width = 140; w.height = 60; w.style = { color: '#a78bfa' };
+        break;
+      case 'valve':
+        w.width = 96; w.height = 96; w.orientation = 'horizontal'; w.style = { color: '#facc15' };
+        break;
+      case 'gauge':
+        w.width = 200; w.height = 200; w.min = 0; w.max = 100; w.precision = 0; w.unit = ''; w.previewValue = 45; w.style = { arcColor: '#334155', activeColor: '#38bdf8', needleColor: '#f87171' };
+        break;
+      case 'tank':
+        w.width = 140; w.height = 200; w.min = 0; w.max = 100; w.unit = ''; w.previewValue = 60; w.style = { fillColor: '#22d3ee' };
+        break;
+      case 'slider':
+        w.width = 200; w.height = 56; w.min = 0; w.max = 100; w.step = 1; w.previewValue = 0;
+        break;
+      case 'numeric':
+        w.width = 160; w.height = 60; w.precision = 0; w.unit = ''; w.previewValue = 0;
+        break;
+      case 'text':
+        w.width = 180; w.height = 26; w.text = 'Text';
+        break;
+      default:
+        break;
+    }
     page.widgets.push(w);
     render();
     select(w.id);
@@ -421,6 +462,12 @@
       case 'lamp':
       case 'motor':
       case 'cylinder':
+      case 'fan':
+      case 'pump':
+      case 'valve':
+        return ['output','variable'];
+      case 'gauge':
+      case 'tank':
         return ['output','variable'];
       case 'slider':
       case 'numeric':
