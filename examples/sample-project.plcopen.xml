@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project>
+  <types>
+    <pous>
+      <pou name="MainProgram" pouType="program">
+        <body>
+          <ST><![CDATA[
+PROGRAM MainProgram
+  VAR
+    Counter : INT := 0;
+    MotorOn : BOOL := FALSE;
+  END_VAR
+  Counter := Counter + 1;
+  MotorOn := (Counter % 2) = 0;
+END_PROGRAM
+]]></ST>
+        </body>
+      </pou>
+      <pou name="AuxProgram" pouType="program">
+        <body>
+          <ST><![CDATA[
+PROGRAM AuxProgram
+  VAR
+    Toggle : INT := 1;
+  END_VAR
+  Toggle := Toggle + 2;
+END_PROGRAM
+]]></ST>
+        </body>
+      </pou>
+    </pous>
+  </types>
+  <ladder>
+    <rung id="rung_0">
+      <element id="r0_e0" type="contact" label="Start" state="true" />
+      <element id="r0_e1" type="coil" label="Motor" state="false" />
+    </rung>
+    <rung id="rung_1">
+      <element id="r1_e0" type="contact" label="Motor" state="true" />
+      <element id="r1_e1" type="coil" label="CoolingFan" state="false" />
+    </rung>
+  </ladder>
+</project>

@@ -1,0 +1,294 @@
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  padding: 0.75rem;
+  background: #0c0c0f;
+  color: #f3f3f3;
+}
+
+.toolbar {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.toolbar button {
+  padding: 0.4rem 0.9rem;
+  border: 1px solid #444;
+  background: #1c1c1f;
+  color: inherit;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.mode-switch {
+  display: inline-flex;
+  gap: 0.4rem;
+  margin-bottom: 1rem;
+}
+
+.mode-switch button {
+  padding: 0.3rem 0.7rem;
+  border-radius: 4px;
+  border: 1px solid #333;
+  background: #1a1c24;
+  color: inherit;
+  cursor: pointer;
+}
+
+.mode-switch button.active {
+  background: #2b5dff;
+  border-color: #5e84ff;
+}
+
+.symbol-preview {
+  border: 1px solid #1f1f2d;
+  border-radius: 8px;
+  padding: 0.75rem;
+  background: #090b12;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.symbol-preview svg {
+  max-width: 100%;
+}
+
+.symbol-preview line.rail {
+  stroke: #f8f8ff;
+  stroke-width: 3;
+}
+
+.symbol-preview line.wire {
+  stroke: #d9deff;
+  stroke-width: 2;
+}
+
+.symbol-preview line.symbol,
+.symbol-preview path.symbol {
+  stroke: #65f2ff;
+  stroke-width: 2;
+  fill: none;
+}
+
+.symbol-preview .symbol-label {
+  fill: #e1e7ff;
+}
+
+.rung {
+  border: 1px solid #252525;
+  border-radius: 10px;
+  padding: 0.75rem;
+  margin-bottom: 1rem;
+  background: #121317;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+}
+
+.rung-preview {
+  border: 1px solid #1e1e2a;
+  border-radius: 6px;
+  padding: 0.5rem;
+  background: #090910;
+  margin-bottom: 0.75rem;
+}
+
+.rung-preview svg {
+  width: 100%;
+  height: auto;
+}
+
+.rung-preview line.rail,
+.ladder-grid line.rail {
+  stroke: #ffffff;
+  stroke-width: 3;
+}
+
+.rung-preview line.wire,
+.ladder-grid line.wire {
+  stroke: #d1d1d1;
+  stroke-width: 2;
+}
+
+.rung-preview path.symbol,
+.rung-preview line.symbol,
+.ladder-grid path.symbol,
+.ladder-grid line.symbol {
+  stroke: #5ee7ff;
+  stroke-width: 2;
+  fill: none;
+}
+
+.symbol-label {
+  fill: #cbd5ff;
+  font-size: 0.7rem;
+}
+
+.rung-header {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.rung-header input {
+  flex: 1;
+  padding: 0.3rem 0.4rem;
+  border-radius: 4px;
+  border: 1px solid #333;
+  background: #0f0f12;
+  color: inherit;
+}
+
+.rung-header button {
+  padding: 0.3rem 0.6rem;
+  border-radius: 4px;
+  border: 1px solid #444;
+  background: #2a1515;
+  color: #fbb;
+}
+
+.ladder-grid {
+  position: relative;
+  border: 1px solid #1f1f2d;
+  border-radius: 8px;
+  margin-bottom: 0.5rem;
+  overflow: hidden;
+  background: radial-gradient(circle at top, rgba(255, 255, 255, 0.06), transparent 50%);
+}
+
+.ladder-grid svg {
+  position: absolute;
+  inset: 0;
+}
+
+.element-layer {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.symbol-hover-target {
+  position: absolute;
+  pointer-events: auto;
+  background: transparent;
+  z-index: 1;
+  cursor: pointer;
+}
+
+.node-card {
+  position: absolute;
+  width: 190px;
+  min-height: 84px;
+  padding: 0.4rem 0.5rem;
+  border-radius: 10px;
+  border: 1px solid #2c2c3a;
+  background: rgba(12, 13, 19, 0.95);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(6px) scale(0.97);
+  transition: opacity 120ms ease, transform 120ms ease;
+  z-index: 2;
+}
+
+.node-card.visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+}
+
+.node-card.contact {
+  border-color: #2f9e6d;
+}
+
+.node-card.coil {
+  border-color: #2b7cff;
+}
+
+.node-card input[type='text'] {
+  padding: 0.3rem 0.4rem;
+  border-radius: 4px;
+  border: 1px solid #333;
+  background: #050508;
+  color: inherit;
+}
+
+.element-controls {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.element-controls select,
+.element-controls button {
+  padding: 0.3rem 0.4rem;
+  border-radius: 4px;
+  border: 1px solid #333;
+  background: #1d1d22;
+  color: inherit;
+}
+
+.state-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  font-size: 0.85rem;
+  color: #aaa;
+}
+
+.branch-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.branch-config {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.5rem;
+  border: 1px dashed #3a3a4f;
+  border-radius: 6px;
+}
+
+.branch-config select {
+  padding: 0.3rem 0.4rem;
+  border-radius: 4px;
+  border: 1px solid #333;
+  background: #111118;
+  color: inherit;
+}
+
+.branch-config button {
+  border-radius: 4px;
+  border: 1px solid #444;
+  background: #2b1f1f;
+  color: #ffbaba;
+  padding: 0.2rem 0.4rem;
+}
+
+.rung-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.4rem;
+}
+
+.rung-actions button {
+  padding: 0.35rem 0.7rem;
+  border-radius: 4px;
+  border: 1px solid #444;
+  background: #1e1e26;
+  color: inherit;
+}
+
+.empty-state {
+  color: #888;
+  font-style: italic;
+  margin: 0.25rem 0 0;
+}

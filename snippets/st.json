@@ -1,0 +1,21 @@
+{
+  "Program Skeleton": {
+    "prefix": "prog",
+    "body": [
+      "PROGRAM ${1:Main}",
+      "  VAR",
+      "    ${2:VarName} : ${3:INT} := ${4:0};",
+      "  END_VAR",
+      "  ${5:// TODO}",
+      "END_PROGRAM"
+    ]
+  },
+  "If Statement": {
+    "prefix": "if",
+    "body": [
+      "IF ${1:condition} THEN",
+      "  ${2:// logic}",
+      "END_IF;"
+    ]
+  }
+}

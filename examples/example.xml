@@ -1,0 +1,368 @@
+<project>
+  <types>
+    <pous>
+      <pou @_name="ProcessController" @_pouType="program">
+        <body ST="PROGRAM ProcessController
+  VAR
+    StartBtn : BOOL := FALSE;
+    StopBtn : BOOL := FALSE;
+    EStop : BOOL := TRUE;
+    SafetyDoorClosed : BOOL := TRUE;
+    AutoMode : BOOL := TRUE;
+    MaintenanceMode : BOOL := FALSE;
+    ManualJogPump : BOOL := FALSE;
+    ManualJogMixer : BOOL := FALSE;
+    ManualJogHeater : BOOL := FALSE;
+    AlarmAckBtn : BOOL := FALSE;
+    ResetSequence : BOOL := FALSE;
+    LevelLow : BOOL := TRUE;
+    LevelHigh : BOOL := FALSE;
+    LevelOverflow : BOOL := FALSE;
+    TempLow : BOOL := TRUE;
+    TempHigh : BOOL := FALSE;
+    PressureOK : BOOL := TRUE;
+    FlowOK : BOOL := TRUE;
+    HeaterFeedback : BOOL := FALSE;
+    PumpFeedback : BOOL := FALSE;
+    MixerFeedback : BOOL := FALSE;
+    DrainClosedFeedback : BOOL := TRUE;
+    InletClosedFeedback : BOOL := TRUE;
+    CIPReady : BOOL := FALSE;
+    CycleCounter : INT := 0;
+    CurrentState : INT := 0;
+    NextState : INT := 0;
+    StateTimer : INT := 0;
+    HeaterRuntime : INT := 0;
+    MixerRuntime : INT := 0;
+    PumpRuntime : INT := 0;
+    AlarmCode : INT := 0;
+    FaultLatch : BOOL := FALSE;
+    SystemReady : BOOL := FALSE;
+    StartLatch : BOOL := FALSE;
+    SafetyHealthy : BOOL := TRUE;
+    MixerMotor : BOOL := FALSE;
+    TransferPump : BOOL := FALSE;
+    Heater : BOOL := FALSE;
+    Cooler : BOOL := FALSE;
+    ValveInlet : BOOL := FALSE;
+    ValveDrain : BOOL := FALSE;
+    CIPValve : BOOL := FALSE;
+    AlarmHorn : BOOL := FALSE;
+    ServiceReminder : BOOL := FALSE;
+    DiagnosticWord : WORD := 16#0000;
+    TankTemp : REAL := 20.0;
+    TankLevel : REAL := 0.0;
+    TargetTemp : REAL := 65.0;
+    HeatingRate : REAL := 0.2;
+    CoolingRate : REAL := 0.3;
+    SafetyRelay : BOOL := FALSE;
+    HeaterPermit : BOOL := FALSE;
+    ManualJogCommand : BOOL := FALSE;
+    MixerSealOK : BOOL := TRUE;
+    PumpSealAlarm : BOOL := FALSE;
+    DrainCommand : BOOL := FALSE;
+    TransferRequest : BOOL := FALSE;
+    SystemReadyLamp : BOOL := FALSE;
+  END_VAR
+
+  SafetyHealthy := SafetyRelay AND PressureOK AND FlowOK;
+  IF NOT SafetyHealthy THEN
+    FaultLatch := TRUE;
+    AlarmCode := 1;
+  END_IF;
+
+  IF ResetSequence THEN
+    StartLatch := FALSE;
+    FaultLatch := FALSE;
+    AlarmCode := 0;
+    CurrentState := 0;
+    StateTimer := 0;
+  END_IF;
+
+  IF StartBtn AND SafetyHealthy AND NOT StartLatch THEN
+    StartLatch := TRUE;
+  END_IF;
+  IF StopBtn OR MaintenanceMode OR FaultLatch THEN
+    StartLatch := FALSE;
+  END_IF;
+
+  SystemReady := StartLatch AND AutoMode AND NOT FaultLatch;
+  AlarmHorn := FaultLatch AND NOT AlarmAckBtn;
+
+  IF ValveInlet THEN
+    TankLevel := TankLevel + 0.5;
+  ELSIF ValveDrain OR CIPValve THEN
+    TankLevel := TankLevel - 0.7;
+  ELSE
+    TankLevel := TankLevel - 0.1;
+  END_IF;
+
+  IF TankLevel < 0.0 THEN
+    TankLevel := 0.0;
+    LevelLow := TRUE;
+    LevelHigh := FALSE;
+  ELSIF TankLevel > 95.0 THEN
+    TankLevel := 95.0;
+    LevelHigh := TRUE;
+    LevelLow := FALSE;
+  ELSE
+    LevelLow := TankLevel < 20.0;
+    LevelHigh := TankLevel > 70.0;
+  END_IF;
+
+  IF ValveInlet AND (NOT InletClosedFeedback) THEN
+    FaultLatch := TRUE;
+    AlarmCode := 2;
+  END_IF;
+  IF ValveDrain AND (NOT DrainClosedFeedback) THEN
+    FaultLatch := TRUE;
+    AlarmCode := 3;
+  END_IF;
+
+  IF Heater THEN
+    TankTemp := TankTemp + HeatingRate;
+    HeaterRuntime := HeaterRuntime + 1;
+  ELSIF Cooler THEN
+    TankTemp := TankTemp - CoolingRate;
+  ELSE
+    TankTemp := TankTemp - 0.05;
+  END_IF;
+
+  IF TankTemp >= 80.0 THEN
+    TempHigh := TRUE;
+    TempLow := FALSE;
+  ELSIF TankTemp <= 25.0 THEN
+    TempLow := TRUE;
+    TempHigh := FALSE;
+  ELSE
+    TempLow := FALSE;
+    TempHigh := FALSE;
+  END_IF;
+
+  IF TempHigh AND Heater THEN
+    Heater := FALSE;
+    Cooler := TRUE;
+  ELSIF TempLow AND (CurrentState >= 20) THEN
+    Cooler := FALSE;
+  END_IF;
+
+  IF NOT HeaterPermit THEN
+    Heater := FALSE;
+  END_IF;
+
+  DiagnosticWord := 16#0000;
+  IF FaultLatch THEN
+    DiagnosticWord := DiagnosticWord OR 16#0001;
+  END_IF;
+  IF NOT SystemReady THEN
+    DiagnosticWord := DiagnosticWord OR 16#0002;
+  END_IF;
+  IF MaintenanceMode THEN
+    DiagnosticWord := DiagnosticWord OR 16#0004;
+  END_IF;
+  IF PumpSealAlarm THEN
+    DiagnosticWord := DiagnosticWord OR 16#0008;
+  END_IF;
+
+  NextState := CurrentState;
+  CASE CurrentState OF
+    0:
+      ValveInlet := FALSE;
+      ValveDrain := FALSE;
+      CIPValve := FALSE;
+      Heater := FALSE;
+      Cooler := FALSE;
+      MixerMotor := FALSE;
+      TransferPump := FALSE;
+      IF SystemReady AND LevelLow THEN
+        NextState := 10;
+      END_IF;
+    10:
+      ValveInlet := TRUE;
+      IF LevelHigh THEN
+        ValveInlet := FALSE;
+        NextState := 20;
+      END_IF;
+      IF LevelOverflow THEN
+        FaultLatch := TRUE;
+        AlarmCode := 4;
+        NextState := 99;
+      END_IF;
+    20:
+      Heater := TRUE;
+      IF TankTemp >= TargetTemp THEN
+        Heater := FALSE;
+        NextState := 30;
+      END_IF;
+      IF TempHigh THEN
+        FaultLatch := TRUE;
+        AlarmCode := 5;
+        NextState := 99;
+      END_IF;
+    30:
+      MixerMotor := TRUE;
+      MixerRuntime := MixerRuntime + 1;
+      IF StateTimer > 200 THEN
+        NextState := 40;
+      END_IF;
+      IF TransferRequest AND StateTimer > 120 THEN
+        NextState := 40;
+      END_IF;
+      IF NOT MixerFeedback THEN
+        FaultLatch := TRUE;
+        AlarmCode := 6;
+        NextState := 99;
+      END_IF;
+    40:
+      MixerMotor := FALSE;
+      TransferPump := TRUE;
+      ValveDrain := FALSE;
+      IF LevelLow THEN
+        TransferPump := FALSE;
+        NextState := 50;
+        CycleCounter := CycleCounter + 1;
+      END_IF;
+      IF NOT PumpFeedback THEN
+        FaultLatch := TRUE;
+        AlarmCode := 7;
+        NextState := 99;
+      END_IF;
+    50:
+      CIPValve := TRUE;
+      ValveDrain := TRUE;
+      IF (StateTimer > 150) OR CIPReady THEN
+        CIPValve := FALSE;
+        ValveDrain := FALSE;
+        NextState := 0;
+      END_IF;
+    99:
+      ValveInlet := FALSE;
+      ValveDrain := TRUE;
+      Heater := FALSE;
+      MixerMotor := FALSE;
+      TransferPump := FALSE;
+      CIPValve := FALSE;
+  ELSE
+      NextState := 0;
+  END_CASE;
+
+  IF NextState <> CurrentState THEN
+    StateTimer := 0;
+    CurrentState := NextState;
+  ELSE
+    StateTimer := StateTimer + 1;
+  END_IF;
+
+  IF CycleCounter >= 25 THEN
+    ServiceReminder := TRUE;
+  END_IF;
+
+  IF NOT AutoMode THEN
+    ValveInlet := ManualJogPump AND SafetyHealthy;
+    MixerMotor := ManualJogMixer AND SafetyHealthy;
+    Heater := ManualJogHeater AND SafetyHealthy AND HeaterPermit;
+    TransferPump := ManualJogCommand AND SafetyHealthy;
+    ValveDrain := ManualJogCommand AND SafetyHealthy;
+  END_IF;
+
+  IF NOT MixerSealOK THEN
+    FaultLatch := TRUE;
+    AlarmCode := 8;
+  END_IF;
+
+  IF PumpSealAlarm THEN
+    FaultLatch := TRUE;
+    AlarmCode := 9;
+  END_IF;
+
+  IF DrainCommand THEN
+    ValveDrain := TRUE;
+  END_IF;
+END_PROGRAM"></body>
+      </pou>
+    </pous>
+  </types>
+  <ladder>
+    <rung @_id="rung_start">
+      <element @_id="start_0" @_type="contact" @_label="StartBtn" @_state="false" @_variant="no"></element>
+      <element @_id="start_1" @_type="contact" @_label="StopBtn" @_state="false" @_variant="nc"></element>
+      <element @_id="start_2" @_type="contact" @_label="EStop" @_state="false" @_variant="nc"></element>
+      <parallel>
+        <branch @_id="start_branch" @_startColumn="0" @_endColumn="1">
+          <element @_id="start_branch_0" @_type="contact" @_label="StartLatch" @_state="false" @_variant="no"></element>
+          <element @_id="start_branch_1" @_type="contact" @_label="SafetyDoorClosed" @_state="false" @_variant="no"></element>
+        </branch>
+      </parallel>
+      <element @_id="start_coil" @_type="coil" @_label="StartLatch" @_state="false" @_variant="set"></element>
+    </rung>
+    <rung @_id="rung_safety_chain">
+      <element @_id="sfty_0" @_type="contact" @_label="EStop" @_state="false" @_variant="nc"></element>
+      <element @_id="sfty_1" @_type="contact" @_label="SafetyDoorClosed" @_state="false" @_variant="no"></element>
+      <element @_id="sfty_2" @_type="contact" @_label="MaintenanceMode" @_state="false" @_variant="nc"></element>
+      <element @_id="sfty_coil" @_type="coil" @_label="SafetyRelay" @_state="false" @_variant="set"></element>
+    </rung>
+    <rung @_id="rung_alarm">
+      <element @_id="alarm_0" @_type="contact" @_label="FaultLatch" @_state="false" @_variant="no"></element>
+      <element @_id="alarm_1" @_type="contact" @_label="AlarmAckBtn" @_state="false" @_variant="nc"></element>
+      <element @_id="alarm_coil" @_type="coil" @_label="AlarmHorn" @_state="false" @_variant="set"></element>
+    </rung>
+    <rung @_id="rung_ready_lamp">
+      <element @_id="ready_0" @_type="contact" @_label="SystemReady" @_state="false" @_variant="no"></element>
+      <element @_id="ready_1" @_type="contact" @_label="FaultLatch" @_state="false" @_variant="nc"></element>
+      <element @_id="ready_2" @_type="contact" @_label="SafetyRelay" @_state="false" @_variant="no"></element>
+      <element @_id="ready_coil" @_type="coil" @_label="SystemReadyLamp" @_state="false" @_variant="set"></element>
+    </rung>
+    <rung @_id="rung_service">
+      <element @_id="service_0" @_type="contact" @_label="ServiceReminder" @_state="false" @_variant="no"></element>
+      <element @_id="service_1" @_type="contact" @_label="MaintenanceMode" @_state="false" @_variant="nc"></element>
+      <element @_id="service_coil" @_type="coil" @_label="CIPValve" @_state="false" @_variant="set"></element>
+    </rung>
+    <rung @_id="rung_heater_permit">
+      <element @_id="heat_0" @_type="contact" @_label="SafetyRelay" @_state="false" @_variant="no"></element>
+      <element @_id="heat_1" @_type="contact" @_label="TempHigh" @_state="false" @_variant="nc"></element>
+      <element @_id="heat_2" @_type="contact" @_label="FaultLatch" @_state="false" @_variant="nc"></element>
+      <element @_id="heat_3" @_type="contact" @_label="MaintenanceMode" @_state="false" @_variant="nc"></element>
+      <element @_id="heat_coil" @_type="coil" @_label="HeaterPermit" @_state="false" @_variant="set"></element>
+    </rung>
+    <rung @_id="rung_mixer_seal">
+      <element @_id="mixseal_0" @_type="contact" @_label="SafetyRelay" @_state="false" @_variant="no"></element>
+      <element @_id="mixseal_1" @_type="contact" @_label="MixerFeedback" @_state="false" @_variant="no"></element>
+      <element @_id="mixseal_2" @_type="contact" @_label="TempHigh" @_state="false" @_variant="nc"></element>
+      <element @_id="mixseal_coil" @_type="coil" @_label="MixerSealOK" @_state="false" @_variant="set"></element>
+    </rung>
+    <rung @_id="rung_pump_alarm">
+      <element @_id="pump_0" @_type="contact" @_label="TransferPump" @_state="false" @_variant="no"></element>
+      <element @_id="pump_1" @_type="contact" @_label="DrainClosedFeedback" @_state="false" @_variant="nc"></element>
+      <element @_id="pump_2" @_type="contact" @_label="PumpFeedback" @_state="false" @_variant="nc"></element>
+      <element @_id="pump_coil" @_type="coil" @_label="PumpSealAlarm" @_state="false" @_variant="set"></element>
+    </rung>
+    <rung @_id="rung_manual_jog">
+      <element @_id="jog_0" @_type="contact" @_label="SafetyRelay" @_state="false" @_variant="no"></element>
+      <parallel>
+        <branch @_id="jog_branch_0" @_startColumn="0" @_endColumn="1">
+          <element @_id="jog_branch_0_0" @_type="contact" @_label="ManualJogPump" @_state="false" @_variant="no"></element>
+        </branch>
+        <branch @_id="jog_branch_1" @_startColumn="0" @_endColumn="1">
+          <element @_id="jog_branch_1_0" @_type="contact" @_label="ManualJogMixer" @_state="false" @_variant="no"></element>
+        </branch>
+        <branch @_id="jog_branch_2" @_startColumn="0" @_endColumn="1">
+          <element @_id="jog_branch_2_0" @_type="contact" @_label="ManualJogHeater" @_state="false" @_variant="no"></element>
+        </branch>
+      </parallel>
+      <element @_id="jog_coil" @_type="coil" @_label="ManualJogCommand" @_state="false" @_variant="set"></element>
+    </rung>
+    <rung @_id="rung_transfer_request">
+      <element @_id="transfer_0" @_type="contact" @_label="StartLatch" @_state="false" @_variant="no"></element>
+      <element @_id="transfer_1" @_type="contact" @_label="AutoMode" @_state="false" @_variant="no"></element>
+      <element @_id="transfer_2" @_type="contact" @_label="LevelHigh" @_state="false" @_variant="no"></element>
+      <element @_id="transfer_3" @_type="contact" @_label="SafetyRelay" @_state="false" @_variant="no"></element>
+      <element @_id="transfer_coil" @_type="coil" @_label="TransferRequest" @_state="false" @_variant="set"></element>
+    </rung>
+    <rung @_id="rung_drain_command">
+      <element @_id="drain_0" @_type="contact" @_label="ManualJogCommand" @_state="false" @_variant="no"></element>
+      <element @_id="drain_1" @_type="contact" @_label="FaultLatch" @_state="false" @_variant="nc"></element>
+      <element @_id="drain_2" @_type="contact" @_label="CIPReady" @_state="false" @_variant="nc"></element>
+      <element @_id="drain_coil" @_type="coil" @_label="DrainCommand" @_state="false" @_variant="set"></element>
+    </rung>
+  </ladder>
+</project>

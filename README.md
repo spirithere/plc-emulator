@@ -1,0 +1,48 @@
+# PLC Emulator VS Code Extension (Prototype)
+
+This repository hosts an early PLC emulator prototype built as a VS Code extension. It focuses on:
+
+- Editing PLCopen XML projects while keeping Structured Text (ST) and ladder diagrams synchronized with a single source of truth.
+- Visual ladder editing inside a webview.
+- A lightweight IEC-style scan cycle emulator for rapid feedback.
+
+## Getting Started
+
+```bash
+npm install
+npm run compile
+npm test
+```
+
+Open the folder in VS Code and press `F5` to launch the extension host. Once running:
+
+1. Run **PLC Emulator: Open PLCopen Project** to select or initialize a PLCopen XML file.
+2. Use **PLC Emulator: Edit Structured Text Block** to mirror an ST block into `.plc/st/<POU>.st` for editing.
+3. Open the ladder editor via **PLC Emulator: Open Ladder Editor** and edit rungs visually.
+4. Use the **PLC Emulator** activity bar view to browse POUs and trigger runtime controls (run/stop, open ladder/I/O panels, switch profiles).
+5. Simulate field I/O with **PLC Emulator: Open I/O Simulator** and toggle digital inputs feeding the emulator.
+6. Switch dialect behavior via **PLC Emulator: Switch Dialect Profile** (IEC baseline or sample vendor variants).
+7. Start/stop execution with **PLC Emulator: Run Program** / **Stop Program**. Output streams to the *PLC Emulator* channel and a status-bar item shows scan timing.
+
+## Folder Structure
+
+- `src/extension.ts` — activation entry point and command wiring.
+- `src/services/plcopenService.ts` — PLCopen XML parsing/serialization with default models.
+- `src/ladder/ladderPanel.ts` & `media/ladder` — ladder editor webview assets.
+- `src/runtime/emulator.ts` — simple scan-cycle interpreter for ST + ladder plus I/O hooks.
+- `src/io/` — digital I/O simulation service + panel webview assets under `media/io-sim`.
+- `src/runtime/profileManager.ts` — prototype profile abstraction for vendor dialects.
+- `src/views/` & `media/runtime-controls` — sidebar tree + runtime control views.
+- `media/ladder` — ladder editor webview with IEC-style preview + editing controls.
+- `test/` — Vitest unit tests for the PLCopen service and emulator controller.
+- `syntaxes/` & `language-configuration.json` — syntax highlighting for ST files.
+- `.plc/` — generated mirror files for ST editing (ignored by git).
+- `examples/` — PLCopen XML samples including `self-hold.plcopen.xml` for latch testing.
+
+## Limitations
+
+- The PLCopen conversion layer currently supports a simplified schema subset.
+- The ladder editor models series contacts/coils only.
+- The emulator executes straight-line assignments and basic ladder logic. Complex instructions/function blocks are placeholders for future milestones.
+
+Track implementation progress via `docs/implementation-plan.md`.

@@ -1,0 +1,159 @@
+{
+  "name": "plc-emu",
+  "displayName": "PLC Emulator Prototype",
+  "publisher": "spirithere",
+  "version": "0.1.0",
+  "description": "Prototype VS Code extension that edits PLCopen XML projects, provides ladder/ST tooling, and runs a simple PLC emulator.",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.89.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "onCommand:plcEmu.openProject",
+    "onCommand:plcEmu.openStructuredText",
+    "onCommand:plcEmu.openStructuredTextBlock",
+    "onCommand:plcEmu.openLadderEditor",
+    "onCommand:plcEmu.openIOSimulator",
+    "onCommand:plcEmu.switchProfile",
+    "onCommand:plcEmu.run",
+    "onCommand:plcEmu.stop",
+    "onView:plcQuickActions",
+    "onView:plcPouExplorer",
+    "onView:plcRuntimeControls"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "plcEmu.openProject",
+        "title": "PLC Emulator: Open PLCopen Project"
+      },
+      {
+        "command": "plcEmu.openStructuredText",
+        "title": "PLC Emulator: Edit Structured Text Block"
+      },
+      {
+        "command": "plcEmu.openStructuredTextBlock",
+        "title": "PLC Emulator: Open Structured Text Block"
+      },
+      {
+        "command": "plcEmu.openLadderEditor",
+        "title": "PLC Emulator: Open Ladder Editor"
+      },
+      {
+        "command": "plcEmu.openIOSimulator",
+        "title": "PLC Emulator: Open I/O Simulator"
+      },
+      {
+        "command": "plcEmu.switchProfile",
+        "title": "PLC Emulator: Switch Dialect Profile"
+      },
+      {
+        "command": "plcEmu.run",
+        "title": "PLC Emulator: Run Program"
+      },
+      {
+        "command": "plcEmu.stop",
+        "title": "PLC Emulator: Stop Program"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "plcEmuSidebar",
+          "title": "PLC Emulator",
+          "icon": "./media/icons/plc.svg"
+        }
+      ]
+    },
+    "views": {
+      "plcEmuSidebar": [
+        {
+          "id": "plcQuickActions",
+          "name": "Quick Actions",
+          "type": "webview"
+        },
+        {
+          "id": "plcPouExplorer",
+          "name": "POUs"
+        },
+        {
+          "id": "plcRuntimeControls",
+          "name": "Runtime"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "PLC Emulator",
+      "properties": {
+        "plcEmu.projectFile": {
+          "type": "string",
+          "default": "project.plcopen.xml",
+          "description": "Relative path to the PLCopen XML file that acts as the project source of truth."
+        },
+        "plcEmu.scanTimeMs": {
+          "type": "number",
+          "default": 100,
+          "minimum": 10,
+          "description": "Default scan cycle time in milliseconds for the emulator."
+        },
+        "plcEmu.profileId": {
+          "type": "string",
+          "default": "iec61131",
+          "enum": [
+            "iec61131",
+            "vendorA",
+            "vendorB"
+          ],
+          "description": "Dialect profile that controls vendor-specific behavior (prototype)."
+        }
+      }
+    },
+    "languages": [
+      {
+        "id": "st",
+        "aliases": [
+          "Structured Text",
+          "ST"
+        ],
+        "extensions": [
+          ".st"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "st",
+        "scopeName": "source.st",
+        "path": "./syntaxes/st.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "st",
+        "path": "./snippets/st.json"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "vscode:prepublish": "npm run compile",
+    "package": "npm run compile && vsce package",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.12",
+    "@types/vscode": "^1.89.0",
+    "@vscode/test-electron": "^2.5.2",
+    "typescript": "^5.5.4",
+    "vitest": "^1.6.1"
+  },
+  "dependencies": {
+    "fast-xml-parser": "^5.3.1"
+  }
+}

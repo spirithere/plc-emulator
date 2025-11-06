@@ -1,0 +1,44 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Structured Text",
+  "scopeName": "source.st",
+  "patterns": [
+    {
+      "name": "comment.line.double-slash.st",
+      "match": "//.*$"
+    },
+    {
+      "name": "comment.block.st",
+      "begin": "\\(\\*",
+      "end": "\\*\\)",
+      "patterns": [
+        {
+          "include": "#comment"
+        }
+      ]
+    },
+    {
+      "name": "keyword.control.st",
+      "match": "\\b(IF|THEN|ELSE|ELSIF|END_IF|CASE|OF|END_CASE|FOR|TO|BY|DO|END_FOR|WHILE|END_WHILE|REPEAT|UNTIL|END_REPEAT|FUNCTION|END_FUNCTION|FUNCTION_BLOCK|END_FUNCTION_BLOCK|PROGRAM|END_PROGRAM)\\b"
+    },
+    {
+      "name": "storage.type.st",
+      "match": "\\b(BOOL|INT|DINT|REAL|LREAL|TIME|STRING|VAR|VAR_INPUT|VAR_OUTPUT|VAR_IN_OUT|VAR_TEMP|VAR_GLOBAL|VAR_EXTERNAL|STRUCT|END_STRUCT|ARRAY|OF)\\b"
+    },
+    {
+      "name": "constant.numeric.st",
+      "match": "\\b[0-9_]+(\\.[0-9_]+)?(e[+-]?[0-9_]+)?\\b"
+    },
+    {
+      "name": "string.quoted.double.st",
+      "begin": '"',
+      "end": '"',
+      "patterns": [
+        {
+          "name": "constant.character.escape.st",
+          "match": "\\\\."
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>PLC Emulator VS Code Extension Implementation Plan</title>
+            <style>
+/* From extension vscode.github */
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+.vscode-dark img[src$=\#gh-light-mode-only],
+.vscode-light img[src$=\#gh-dark-mode-only],
+.vscode-high-contrast:not(.vscode-high-contrast-light) img[src$=\#gh-light-mode-only],
+.vscode-high-contrast-light img[src$=\#gh-dark-mode-only] {
+	display: none;
+}
+
+</style>
+            
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/Microsoft/vscode/extensions/markdown-language-features/media/markdown.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/Microsoft/vscode/extensions/markdown-language-features/media/highlight.css">
+<style>
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe WPC', 'Segoe UI', system-ui, 'Ubuntu', 'Droid Sans', sans-serif;
+                font-size: 14px;
+                line-height: 1.6;
+            }
+        </style>
+        <style>
+.task-list-item {
+    list-style-type: none;
+}
+
+.task-list-item-checkbox {
+    margin-left: -20px;
+    vertical-align: middle;
+    pointer-events: none;
+}
+</style>
+<style>
+:root {
+  --color-note: #0969da;
+  --color-tip: #1a7f37;
+  --color-warning: #9a6700;
+  --color-severe: #bc4c00;
+  --color-caution: #d1242f;
+  --color-important: #8250df;
+}
+
+</style>
+<style>
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-note: #2f81f7;
+    --color-tip: #3fb950;
+    --color-warning: #d29922;
+    --color-severe: #db6d28;
+    --color-caution: #f85149;
+    --color-important: #a371f7;
+  }
+}
+
+</style>
+<style>
+.markdown-alert {
+  padding: 0.5rem 1rem;
+  margin-bottom: 16px;
+  color: inherit;
+  border-left: .25em solid #888;
+}
+
+.markdown-alert>:first-child {
+  margin-top: 0
+}
+
+.markdown-alert>:last-child {
+  margin-bottom: 0
+}
+
+.markdown-alert .markdown-alert-title {
+  display: flex;
+  font-weight: 500;
+  align-items: center;
+  line-height: 1
+}
+
+.markdown-alert .markdown-alert-title .octicon {
+  margin-right: 0.5rem;
+  display: inline-block;
+  overflow: visible !important;
+  vertical-align: text-bottom;
+  fill: currentColor;
+}
+
+.markdown-alert.markdown-alert-note {
+  border-left-color: var(--color-note);
+}
+
+.markdown-alert.markdown-alert-note .markdown-alert-title {
+  color: var(--color-note);
+}
+
+.markdown-alert.markdown-alert-important {
+  border-left-color: var(--color-important);
+}
+
+.markdown-alert.markdown-alert-important .markdown-alert-title {
+  color: var(--color-important);
+}
+
+.markdown-alert.markdown-alert-warning {
+  border-left-color: var(--color-warning);
+}
+
+.markdown-alert.markdown-alert-warning .markdown-alert-title {
+  color: var(--color-warning);
+}
+
+.markdown-alert.markdown-alert-tip {
+  border-left-color: var(--color-tip);
+}
+
+.markdown-alert.markdown-alert-tip .markdown-alert-title {
+  color: var(--color-tip);
+}
+
+.markdown-alert.markdown-alert-caution {
+  border-left-color: var(--color-caution);
+}
+
+.markdown-alert.markdown-alert-caution .markdown-alert-title {
+  color: var(--color-caution);
+}
+
+</style>
+        
+        </head>
+        <body class="vscode-body vscode-light">
+            <h1 id="plc-emulator-vs-code-extension-implementation-plan">PLC Emulator VS Code Extension Implementation Plan</h1>
+<h2 id="1-goal--scope">1. Goal &amp; Scope</h2>
+<ul>
+<li>Build a VS Code extension that lets users author PLC programs using Structured Text (ST) and ladder diagrams (LD) stored in PLCopen XML.</li>
+<li>Provide a visual ladder editor, ST editing via native VS Code text capabilities, and an emulator that executes IEC 61131-3 compliant logic (extensible for vendor dialects later).</li>
+</ul>
+<h2 id="2-guiding-principles--assumptions">2. Guiding Principles &amp; Assumptions</h2>
+<ol>
+<li>PLCopen XML is the single source of truth; editors read/write to it.</li>
+<li>First release targets IEC 61131-3 baseline behavior; dialect-specific behavior is pluggable via profiles.</li>
+<li>Extension should run fully offline, using WebAssembly/Node runtime for execution when possible.</li>
+<li>Modular architecture to swap parsers, renderers, and runtime backends without rewriting the UI shell.</li>
+</ol>
+<h2 id="3-high-level-architecture">3. High-Level Architecture</h2>
+<table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>Responsibilities</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>VS Code Extension Host</td>
+<td>Activation, commands, tree/views, message routing between UI and backend.</td>
+</tr>
+<tr>
+<td>Data Layer</td>
+<td>PLCopen XML parser/serializer, project graph, validation.</td>
+</tr>
+<tr>
+<td>Editors</td>
+<td>ST text editor enhancements + Ladder visual editor (Webview).</td>
+</tr>
+<tr>
+<td>Runtime/Emulator</td>
+<td>IEC execution engine, I/O simulation, debugging hooks.</td>
+</tr>
+<tr>
+<td>Integration</td>
+<td>Sync between editors and runtime; file watching; profile management.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="31-module-breakdown">3.1 Module Breakdown</h3>
+<ul>
+<li><code>extension-core</code>: activation, command registration, configuration management, PLC project workspace handling.</li>
+<li><code>plcopen-service</code>: parse/generate PLCopen XML, maintain in-memory model, diffing, validation.</li>
+<li><code>st-language-support</code>: syntax highlighting, snippets, diagnostics, go-to-definition via language server features if needed.</li>
+<li><code>ladder-webview</code>: webview panel leveraging canvas/SVG React app for ladder editing.</li>
+<li><code>emulator-engine</code>: interpreter or compiled runtime for ST + LD, built around IEC execution model with scan cycles.</li>
+<li><code>profile-manager</code>: manage IEC default vs vendor dialect overrides (future).</li>
+</ul>
+<h2 id="4-detailed-feature-plan">4. Detailed Feature Plan</h2>
+<h3 id="41-workspace--project-handling">4.1 Workspace &amp; Project Handling</h3>
+<ul>
+<li>Detect PLC projects (folder with <code>project.plcopen.xml</code>).</li>
+<li>Provide commands to create/open PLC projects.</li>
+<li>Watch filesystem changes to keep in-memory model synced.</li>
+</ul>
+<h3 id="42-plcopen-xml-management">4.2 PLCopen XML Management</h3>
+<ul>
+<li>Use XML DOM + schema validation.</li>
+<li>Maintain AST-like model for POUs, tasks, programs, resources.</li>
+<li>Expose model services to editors/runtime.</li>
+<li>Provide import/export commands.</li>
+</ul>
+<h3 id="43-structured-text-support">4.3 Structured Text Support</h3>
+<ul>
+<li>Reuse VS Code text capabilities; add syntax grammar (tmLanguage) and color theme contributions.</li>
+<li>Provide snippets/templates for common ST constructs.</li>
+<li>Diagnostics: parse ST blocks from PLCopen XML; surface via Problems panel.</li>
+<li>Optional: language server (later) for semantic features.</li>
+</ul>
+<h3 id="44-ladder-editor-webview">4.4 Ladder Editor (Webview)</h3>
+<ul>
+<li>React + TypeScript front-end rendered in VS Code webview.</li>
+<li>Canvas/SVG grid supporting drag/drop of contacts, coils, function blocks.</li>
+<li>Serialization to/from PLCopen XML LD sections.</li>
+<li>Editing affordances: rung insert/delete, copy/paste, undo/redo.</li>
+<li>Zoom/pan, alignment helpers.</li>
+</ul>
+<h3 id="45-emulator--execution-flow">4.5 Emulator &amp; Execution Flow</h3>
+<ul>
+<li>Runtime engine processes PLCopen model -&gt; builds execution graph.</li>
+<li>Implements deterministic scan cycle (initialize, input processing, execution, output update).</li>
+<li>Provide watch window, breakpoints, step/scan controls via VS Code UI.</li>
+<li>I/O simulation: digital/analog channels, timers, counters.</li>
+<li>Execution runs inside Node worker/WebAssembly for isolation.</li>
+</ul>
+<h3 id="46-extensibility-for-vendor-dialects">4.6 Extensibility for Vendor Dialects</h3>
+<ul>
+<li>Abstract instruction set definitions; IEC profile as default JSON descriptor.</li>
+<li>Plugin mechanism to register vendor add-ons (custom function blocks, timing behaviors).</li>
+<li>Configuration UI to switch dialect profiles per workspace.</li>
+</ul>
+<h3 id="47-testing--tooling">4.7 Testing &amp; Tooling</h3>
+<ul>
+<li>Unit tests for PLCopen parser, runtime, ladder serialization.</li>
+<li>Integration tests for extension activation and command flow (using <code>vscode-test</code>).</li>
+<li>Snapshot tests for ladder editor UI (Storybook or Jest + jsdom).</li>
+</ul>
+<h2 id="5-milestones--deliverables">5. Milestones &amp; Deliverables</h2>
+<ol>
+<li><strong>Foundation (Week 1-2)</strong></li>
+</ol>
+<ul>
+<li>Scaffold VS Code extension project.</li>
+<li>Basic command palette entries; hello-world activation.</li>
+<li>PLCopen file detection + simple parser prototype.</li>
+</ul>
+<ol start="2">
+<li><strong>Editing Core (Week 3-5)</strong>
+<ul>
+<li>ST grammar/snippets + PLCopen serialization.</li>
+<li>Ladder webview skeleton with load/save of simple rungs.</li>
+</ul>
+</li>
+<li><strong>Execution Engine (Week 6-8)</strong>
+<ul>
+<li>Implement IEC scan cycle interpreter for ST + LD subset.</li>
+<li>Provide run/stop controls, live variable watch.</li>
+</ul>
+</li>
+<li><strong>Polish &amp; Extensibility (Week 9-10)</strong></li>
+</ol>
+<ul>
+<li>Improve ladder UX, undo/redo, validation, and add branching/parallel logic editing.</li>
+<li>Add profile manager scaffolding for vendor dialects and a control-side bar for execution tooling.</li>
+<li>Documentation + packaging for marketplace preview with sample PLCopen projects.</li>
+</ul>
+<h2 id="6-risks--mitigations">6. Risks &amp; Mitigations</h2>
+<ul>
+<li><strong>Complex ladder editing UX</strong>: start with minimal feature set and gather feedback; leverage existing open-source ladder renderers for reference.</li>
+<li><strong>PLCopen schema complexity</strong>: adopt existing schema validation libraries; keep converters well-tested.</li>
+<li><strong>Performance of emulator</strong>: optimize data structures; consider WebAssembly backend if JS interpreter is slow.</li>
+<li><strong>Keeping ST &amp; LD in sync</strong>: enforce single source of truth (PLCopen) with change events + validation before writes.</li>
+</ul>
+<h2 id="7-progress-checklist">7. Progress Checklist</h2>
+<ul class="contains-task-list">
+<li class="task-list-item enabled"><input class="task-list-item-checkbox" checked=""type="checkbox"> Extension scaffolding created (Yo Code or manual setup)</li>
+<li class="task-list-item enabled"><input class="task-list-item-checkbox" checked=""type="checkbox"> Command palette flows for project detection implemented</li>
+<li class="task-list-item enabled"><input class="task-list-item-checkbox" checked=""type="checkbox"> PLCopen XML parser and serializer (tests pending)</li>
+<li class="task-list-item enabled"><input class="task-list-item-checkbox" checked=""type="checkbox"> Structured Text grammar and snippets wired into VS Code</li>
+<li class="task-list-item enabled"><input class="task-list-item-checkbox" checked=""type="checkbox"> Ladder webview renders and edits basic rungs</li>
+<li class="task-list-item enabled"><input class="task-list-item-checkbox" checked=""type="checkbox"> Data synchronization between PLCopen model and editors</li>
+<li class="task-list-item enabled"><input class="task-list-item-checkbox" checked=""type="checkbox"> Emulator executes IEC scan cycle for ST + LD</li>
+<li class="task-list-item enabled"><input class="task-list-item-checkbox" checked=""type="checkbox"> I/O simulation panel and runtime controls</li>
+<li class="task-list-item enabled"><input class="task-list-item-checkbox" checked=""type="checkbox"> Vendor profile abstraction layer stub</li>
+<li class="task-list-item enabled"><input class="task-list-item-checkbox" checked=""type="checkbox"> Packaging + documentation for preview release</li>
+<li class="task-list-item enabled"><input class="task-list-item-checkbox"type="checkbox"> Activity side bar with POU tree + runtime controls</li>
+<li class="task-list-item enabled"><input class="task-list-item-checkbox"type="checkbox"> Ladder editor branching/parallel rail editing</li>
+</ul>
+<h2 id="8-next-steps">8. Next Steps</h2>
+<ul>
+<li>Confirm tooling stack (TypeScript + React + testing frameworks).</li>
+<li>Decide on persistence model for ladder diagrams (direct PLCopen vs intermediate model).</li>
+<li>Begin milestone 1 tasks and keep checklist updated per commit.</li>
+</ul>
+
+            
+            
+        </body>
+        </html>

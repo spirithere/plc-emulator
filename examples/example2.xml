@@ -1,0 +1,387 @@
+<project>
+  <types>
+    <pous>
+      <pou @_name="ComplexLine" @_pouType="program">
+        <body ST="PROGRAM ComplexLine
+  VAR
+    StartBtn : BOOL := FALSE;
+    StopBtn : BOOL := FALSE;
+    ResetBtn : BOOL := FALSE;
+    EStop : BOOL := FALSE;
+    ModeAuto : BOOL := TRUE;
+    ModeManual : BOOL := FALSE;
+    PartSensor : BOOL := FALSE;
+    PartSensorPrev : BOOL := FALSE;
+    LatchRun : BOOL := FALSE;
+    LatchJam : BOOL := FALSE;
+    Conveyor1 : BOOL := FALSE;
+    Conveyor2 : BOOL := FALSE;
+    Diverter : BOOL := FALSE;
+    AlarmHorn : BOOL := FALSE;
+    CoolingFan : BOOL := FALSE;
+    OverTemp : BOOL := FALSE;
+    LowPressure : BOOL := FALSE;
+    JamSensor1 : BOOL := FALSE;
+    JamSensor2 : BOOL := FALSE;
+    TempHigh : BOOL := FALSE;
+    PressureLow : BOOL := FALSE;
+    PieceCounter : INT := 0;
+    TargetCount : INT := 120;
+    AutoStep : INT := 0;
+    SpeedSetpoint : REAL := 0.0;
+    SpeedFeedback : REAL := 0.0;
+    PGain : REAL := 0.5;
+    IGain : REAL := 0.05;
+    IntegralTerm : REAL := 0.0;
+    OutputTorque : REAL := 0.0;
+    LoadDisturbance : REAL := 0.0;
+    AutoEnable : BOOL := FALSE;
+    ManualSeal : BOOL := FALSE;
+    AlarmPermissive : BOOL := TRUE;
+    CoolingDemand : BOOL := FALSE;
+    TransferReady : BOOL := FALSE;
+    CounterResetPulse : BOOL := FALSE;
+    DiverterKick : BOOL := FALSE;
+    SystemHealthy : BOOL := TRUE;
+    QualityGate : BOOL := FALSE;
+    PieceCounterReset : BOOL := FALSE;
+    EnergySave : BOOL := FALSE;
+    BufferReady : BOOL := FALSE;
+    FaultSummary : BOOL := FALSE;
+    LubricationPump : BOOL := FALSE;
+    AlarmSilence : BOOL := FALSE;
+    HeaterPermissive : BOOL := FALSE;
+    DiagnosticsBlink : BOOL := FALSE;
+    LubeWindow : BOOL := FALSE;
+    BlinkWindow : BOOL := FALSE;
+    CycleTimer : TON;
+    TransferTimer : TON;
+    JamTimer : TON;
+    LubeTimer : TON;
+    BlinkTimer : TON;
+  END_VAR
+  OverTemp := TempHigh;
+  LowPressure := PressureLow;
+  AlarmPermissive := NOT LowPressure AND NOT OverTemp;
+  PieceCounterReset := ResetBtn;
+  IF EStop THEN
+    LatchRun := FALSE;
+    AutoStep := 0;
+  ELSE
+    IF StartBtn AND NOT StopBtn AND NOT LatchJam THEN
+      LatchRun := TRUE;
+    END_IF;
+    IF StopBtn OR (PieceCounter >= TargetCount) THEN
+      LatchRun := FALSE;
+    END_IF;
+  END_IF;
+  IF PieceCounterReset THEN
+    PieceCounter := 0;
+    LatchJam := FALSE;
+    AutoStep := 0;
+  END_IF;
+  CycleTimer(IN := LatchRun AND (AutoStep = 10), PT := T#4S);
+  TransferTimer(IN := LatchRun AND (AutoStep = 30), PT := T#3S);
+  JamTimer(IN := JamSensor1 OR JamSensor2, PT := T#2S);
+  LubeTimer(IN := LatchRun OR ManualSeal, PT := T#12S);
+  BlinkTimer(IN := NOT SystemHealthy OR FaultSummary, PT := T#500MS);
+  LubeWindow := LubeTimer.Q;
+  BlinkWindow := BlinkTimer.Q;
+  IF JamTimer.Q THEN
+    LatchJam := TRUE;
+  END_IF;
+  IF LatchRun THEN
+    CASE AutoStep OF
+      0:
+        IF ModeAuto THEN
+          AutoStep := 10;
+        END_IF;
+      10:
+        Conveyor1 := TRUE;
+        IF CycleTimer.Q THEN
+          AutoStep := 20;
+        END_IF;
+      20:
+        Conveyor1 := TRUE;
+        Conveyor2 := TRUE;
+        IF JamSensor2 THEN
+          AutoStep := 25;
+        ELSE
+          AutoStep := 30;
+        END_IF;
+      25:
+        Conveyor1 := FALSE;
+        Conveyor2 := FALSE;
+        Diverter := FALSE;
+        AlarmHorn := TRUE;
+      30:
+        Conveyor1 := TRUE;
+        Conveyor2 := TRUE;
+        Diverter := ModeAuto;
+        IF TransferTimer.Q THEN
+          AutoStep := 40;
+        END_IF;
+      40:
+        Conveyor2 := TRUE;
+        Diverter := ModeAuto;
+        IF PieceCounter >= TargetCount THEN
+          AutoStep := 50;
+        END_IF;
+      50:
+        Conveyor1 := FALSE;
+        Conveyor2 := FALSE;
+        Diverter := FALSE;
+        LatchRun := FALSE;
+      ELSE
+        AutoStep := 0;
+    END_CASE;
+  ELSE
+    Conveyor1 := FALSE;
+    Conveyor2 := FALSE;
+    Diverter := FALSE;
+  END_IF;
+  IF ModeManual THEN
+    Conveyor1 := StartBtn AND NOT StopBtn;
+    Conveyor2 := ModeManual AND Conveyor1 AND NOT JamSensor2;
+  END_IF;
+  IF PartSensor AND NOT PartSensorPrev THEN
+    PieceCounter := PieceCounter + 1;
+  END_IF;
+  PartSensorPrev := PartSensor;
+  IF PieceCounter < 0 THEN
+    PieceCounter := 0;
+  END_IF;
+  IF ModeAuto THEN
+    SpeedSetpoint := 85.0;
+  ELSE
+    SpeedSetpoint := 35.0;
+  END_IF;
+  SpeedFeedback := SpeedFeedback + ((OutputTorque - LoadDisturbance) - SpeedFeedback) * 0.1;
+  IntegralTerm := IntegralTerm + (SpeedSetpoint - SpeedFeedback) * IGain;
+  IF IntegralTerm > 100.0 THEN
+    IntegralTerm := 100.0;
+  ELSIF IntegralTerm < 0.0 THEN
+    IntegralTerm := 0.0;
+  END_IF;
+  OutputTorque := (SpeedSetpoint - SpeedFeedback) * PGain + IntegralTerm;
+  IF OutputTorque > 100.0 THEN
+    OutputTorque := 100.0;
+  ELSIF OutputTorque < 0.0 THEN
+    OutputTorque := 0.0;
+  END_IF;
+  QualityGate := PartSensor AND NOT JamSensor1;
+  CoolingDemand := OverTemp OR (SpeedSetpoint > 60.0);
+  AutoEnable := LatchRun AND ModeAuto AND AlarmPermissive;
+  ManualSeal := ModeManual AND StartBtn AND NOT StopBtn;
+  TransferReady := LatchRun AND (AutoStep >= 30) AND NOT JamSensor2;
+  CounterResetPulse := PieceCounterReset;
+  DiverterKick := Diverter AND QualityGate;
+  SystemHealthy := NOT EStop AND NOT LatchJam AND AlarmPermissive;
+  AlarmHorn := AlarmHorn OR LatchJam OR OverTemp OR LowPressure;
+  CoolingFan := CoolingDemand OR OverTemp;
+  IF EnergySave THEN
+    SpeedSetpoint := SpeedSetpoint - 10.0;
+    IF SpeedSetpoint < 20.0 THEN
+      SpeedSetpoint := 20.0;
+    END_IF;
+  END_IF;
+  IF BufferReady THEN
+    TransferReady := TRUE;
+  END_IF;
+  IF FaultSummary THEN
+    LatchRun := FALSE;
+  END_IF;
+  IF AlarmSilence THEN
+    AlarmHorn := FALSE;
+  END_IF;
+  IF HeaterPermissive THEN
+    CoolingDemand := FALSE;
+  END_IF;
+  IF DiagnosticsBlink THEN
+    LoadDisturbance := LoadDisturbance + 0.2;
+  ELSE
+    LoadDisturbance := LoadDisturbance * 0.95;
+  END_IF;
+  IF LubricationPump THEN
+    LoadDisturbance := LoadDisturbance + 0.5;
+  END_IF;
+  IF LoadDisturbance > 50.0 THEN
+    LoadDisturbance := 50.0;
+  END_IF;
+END_PROGRAM"></body>
+      </pou>
+    </pous>
+  </types>
+  <ladder>
+    <rung @_id="rung_start_latch">
+      <element @_id="rung_start_latch_0" @_type="contact" @_label="StartBtn" @_state="false" @_variant="no"></element>
+      <element @_id="rung_start_latch_1" @_type="contact" @_label="StopBtn" @_state="false" @_variant="nc"></element>
+      <element @_id="rung_start_latch_2" @_type="contact" @_label="EStop" @_state="false" @_variant="nc"></element>
+      <element @_id="rung_start_latch_3" @_type="contact" @_label="AlarmPermissive" @_state="false" @_variant="no"></element>
+      <element @_id="rung_start_latch_4" @_type="coil" @_label="LatchRun" @_state="false"></element>
+    </rung>
+    <rung @_id="rung_auto_enable">
+      <element @_id="rung_auto_enable_0" @_type="contact" @_label="LatchRun" @_state="false" @_variant="no"></element>
+      <element @_id="rung_auto_enable_1" @_type="contact" @_label="ModeAuto" @_state="false" @_variant="no"></element>
+      <element @_id="rung_auto_enable_2" @_type="contact" @_label="LatchJam" @_state="false" @_variant="nc"></element>
+      <element @_id="rung_auto_enable_3" @_type="coil" @_label="AutoEnable" @_state="false"></element>
+    </rung>
+    <rung @_id="rung_manual_seal">
+      <element @_id="rung_manual_seal_0" @_type="contact" @_label="ModeManual" @_state="false" @_variant="no"></element>
+      <element @_id="rung_manual_seal_1" @_type="contact" @_label="StartBtn" @_state="false" @_variant="no"></element>
+      <parallel>
+        <branch @_id="branch_manual_seal_a" @_startColumn="2" @_endColumn="3">
+          <element @_id="rung_manual_seal_2" @_type="contact" @_label="StopBtn" @_state="false" @_variant="nc"></element>
+        </branch>
+        <branch @_id="branch_manual_seal_b" @_startColumn="2" @_endColumn="3">
+          <element @_id="rung_manual_seal_3" @_type="contact" @_label="ManualSeal" @_state="false" @_variant="no"></element>
+        </branch>
+      </parallel>
+      <element @_id="rung_manual_seal_4" @_type="coil" @_label="ManualSeal" @_state="false"></element>
+    </rung>
+    <rung @_id="rung_conveyor1">
+      <parallel>
+        <branch @_id="branch_conveyor1_a" @_startColumn="0" @_endColumn="2">
+          <element @_id="rung_conveyor1_0" @_type="contact" @_label="AutoEnable" @_state="false" @_variant="no"></element>
+          <element @_id="rung_conveyor1_1" @_type="contact" @_label="SystemHealthy" @_state="false" @_variant="no"></element>
+        </branch>
+        <branch @_id="branch_conveyor1_b" @_startColumn="0" @_endColumn="2">
+          <element @_id="rung_conveyor1_2" @_type="contact" @_label="ManualSeal" @_state="false" @_variant="no"></element>
+          <element @_id="rung_conveyor1_3" @_type="contact" @_label="AlarmPermissive" @_state="false" @_variant="no"></element>
+        </branch>
+      </parallel>
+      <element @_id="rung_conveyor1_4" @_type="coil" @_label="Conveyor1" @_state="false"></element>
+    </rung>
+    <rung @_id="rung_conveyor2">
+      <element @_id="rung_conveyor2_0" @_type="contact" @_label="AutoEnable" @_state="false" @_variant="no"></element>
+      <element @_id="rung_conveyor2_1" @_type="contact" @_label="TransferReady" @_state="false" @_variant="no"></element>
+      <element @_id="rung_conveyor2_2" @_type="contact" @_label="JamSensor2" @_state="false" @_variant="nc"></element>
+      <element @_id="rung_conveyor2_3" @_type="coil" @_label="Conveyor2" @_state="false"></element>
+    </rung>
+    <rung @_id="rung_diverter">
+      <element @_id="rung_diverter_0" @_type="contact" @_label="TransferReady" @_state="false" @_variant="no"></element>
+      <parallel>
+        <branch @_id="branch_diverter_a" @_startColumn="1" @_endColumn="2">
+          <element @_id="rung_diverter_1" @_type="contact" @_label="QualityGate" @_state="false" @_variant="no"></element>
+        </branch>
+        <branch @_id="branch_diverter_b" @_startColumn="1" @_endColumn="2">
+          <element @_id="rung_diverter_2" @_type="contact" @_label="ModeManual" @_state="false" @_variant="no"></element>
+        </branch>
+      </parallel>
+      <element @_id="rung_diverter_3" @_type="contact" @_label="EStop" @_state="false" @_variant="nc"></element>
+      <element @_id="rung_diverter_4" @_type="coil" @_label="Diverter" @_state="false"></element>
+    </rung>
+    <rung @_id="rung_alarm">
+      <parallel>
+        <branch @_id="branch_alarm_a" @_startColumn="0" @_endColumn="1">
+          <element @_id="rung_alarm_0" @_type="contact" @_label="LatchJam" @_state="false" @_variant="no"></element>
+        </branch>
+        <branch @_id="branch_alarm_b" @_startColumn="0" @_endColumn="1">
+          <element @_id="rung_alarm_1" @_type="contact" @_label="OverTemp" @_state="false" @_variant="no"></element>
+        </branch>
+        <branch @_id="branch_alarm_c" @_startColumn="0" @_endColumn="1">
+          <element @_id="rung_alarm_2" @_type="contact" @_label="LowPressure" @_state="false" @_variant="no"></element>
+        </branch>
+      </parallel>
+      <element @_id="rung_alarm_3" @_type="coil" @_label="AlarmHorn" @_state="false"></element>
+    </rung>
+    <rung @_id="rung_cooling">
+      <element @_id="rung_cooling_0" @_type="contact" @_label="CoolingDemand" @_state="false" @_variant="no"></element>
+      <element @_id="rung_cooling_1" @_type="contact" @_label="SystemHealthy" @_state="false" @_variant="no"></element>
+      <element @_id="rung_cooling_2" @_type="coil" @_label="CoolingFan" @_state="false"></element>
+    </rung>
+    <rung @_id="rung_counter_reset">
+      <element @_id="rung_counter_reset_0" @_type="contact" @_label="ResetBtn" @_state="false" @_variant="no"></element>
+      <element @_id="rung_counter_reset_1" @_type="coil" @_label="PieceCounterReset" @_state="false"></element>
+    </rung>
+    <rung @_id="rung_system_healthy">
+      <element @_id="rung_system_healthy_0" @_type="contact" @_label="EStop" @_state="false" @_variant="nc"></element>
+      <element @_id="rung_system_healthy_1" @_type="contact" @_label="LowPressure" @_state="false" @_variant="nc"></element>
+      <element @_id="rung_system_healthy_2" @_type="contact" @_label="OverTemp" @_state="false" @_variant="nc"></element>
+      <element @_id="rung_system_healthy_3" @_type="coil" @_label="SystemHealthy" @_state="false"></element>
+    </rung>
+    <rung @_id="rung_diverter_kick">
+      <element @_id="rung_diverter_kick_0" @_type="contact" @_label="AutoEnable" @_state="false" @_variant="no"></element>
+      <element @_id="rung_diverter_kick_1" @_type="contact" @_label="QualityGate" @_state="false" @_variant="no"></element>
+      <element @_id="rung_diverter_kick_2" @_type="contact" @_label="JamSensor2" @_state="false" @_variant="nc"></element>
+      <element @_id="rung_diverter_kick_3" @_type="coil" @_label="DiverterKick" @_state="false"></element>
+    </rung>
+    <rung @_id="rung_alarm_perm">
+      <element @_id="rung_alarm_perm_0" @_type="contact" @_label="SystemHealthy" @_state="false" @_variant="no"></element>
+      <element @_id="rung_alarm_perm_1" @_type="contact" @_label="LowPressure" @_state="false" @_variant="nc"></element>
+      <element @_id="rung_alarm_perm_2" @_type="contact" @_label="OverTemp" @_state="false" @_variant="nc"></element>
+      <element @_id="rung_alarm_perm_3" @_type="coil" @_label="AlarmPermissive" @_state="false"></element>
+    </rung>
+    <rung @_id="rung_counter_watch">
+      <element @_id="rung_counter_watch_0" @_type="contact" @_label="PieceCounterReset" @_state="false" @_variant="no"></element>
+      <element @_id="rung_counter_watch_1" @_type="contact" @_label="AutoEnable" @_state="false" @_variant="no"></element>
+      <element @_id="rung_counter_watch_2" @_type="coil" @_label="CounterResetPulse" @_state="false"></element>
+    </rung>
+    <rung @_id="rung_energy_save">
+      <element @_id="rung_energy_save_0" @_type="contact" @_label="SystemHealthy" @_state="false" @_variant="no"></element>
+      <element @_id="rung_energy_save_1" @_type="contact" @_label="LatchRun" @_state="false" @_variant="nc"></element>
+      <element @_id="rung_energy_save_2" @_type="contact" @_label="CoolingDemand" @_state="false" @_variant="nc"></element>
+      <element @_id="rung_energy_save_3" @_type="contact" @_label="ModeAuto" @_state="false" @_variant="no"></element>
+      <element @_id="rung_energy_save_4" @_type="coil" @_label="EnergySave" @_state="false"></element>
+    </rung>
+    <rung @_id="rung_buffer_ready">
+      <element @_id="rung_buffer_ready_0" @_type="contact" @_label="Conveyor1" @_state="false" @_variant="no"></element>
+      <element @_id="rung_buffer_ready_1" @_type="contact" @_label="Conveyor2" @_state="false" @_variant="no"></element>
+      <element @_id="rung_buffer_ready_2" @_type="contact" @_label="QualityGate" @_state="false" @_variant="no"></element>
+      <element @_id="rung_buffer_ready_3" @_type="contact" @_label="JamSensor1" @_state="false" @_variant="nc"></element>
+      <element @_id="rung_buffer_ready_4" @_type="coil" @_label="BufferReady" @_state="false"></element>
+    </rung>
+    <rung @_id="rung_fault_summary">
+      <parallel>
+        <branch @_id="branch_fault_summary_a" @_startColumn="0" @_endColumn="1">
+          <element @_id="rung_fault_summary_0" @_type="contact" @_label="EStop" @_state="false" @_variant="no"></element>
+        </branch>
+        <branch @_id="branch_fault_summary_b" @_startColumn="0" @_endColumn="1">
+          <element @_id="rung_fault_summary_1" @_type="contact" @_label="LatchJam" @_state="false" @_variant="no"></element>
+        </branch>
+        <branch @_id="branch_fault_summary_c" @_startColumn="0" @_endColumn="1">
+          <element @_id="rung_fault_summary_2" @_type="contact" @_label="OverTemp" @_state="false" @_variant="no"></element>
+        </branch>
+        <branch @_id="branch_fault_summary_d" @_startColumn="0" @_endColumn="1">
+          <element @_id="rung_fault_summary_3" @_type="contact" @_label="LowPressure" @_state="false" @_variant="no"></element>
+        </branch>
+        <branch @_id="branch_fault_summary_e" @_startColumn="0" @_endColumn="1">
+          <element @_id="rung_fault_summary_4" @_type="contact" @_label="SystemHealthy" @_state="false" @_variant="nc"></element>
+        </branch>
+      </parallel>
+      <element @_id="rung_fault_summary_5" @_type="coil" @_label="FaultSummary" @_state="false"></element>
+    </rung>
+    <rung @_id="rung_lubrication">
+      <element @_id="rung_lubrication_0" @_type="contact" @_label="AutoEnable" @_state="false" @_variant="no"></element>
+      <element @_id="rung_lubrication_1" @_type="contact" @_label="LubeWindow" @_state="false" @_variant="no"></element>
+      <parallel>
+        <branch @_id="branch_lubrication_a" @_startColumn="2" @_endColumn="3">
+          <element @_id="rung_lubrication_2" @_type="contact" @_label="JamSensor1" @_state="false" @_variant="nc"></element>
+          <element @_id="rung_lubrication_3" @_type="contact" @_label="PieceCounterReset" @_state="false" @_variant="nc"></element>
+        </branch>
+        <branch @_id="branch_lubrication_b" @_startColumn="2" @_endColumn="3">
+          <element @_id="rung_lubrication_4" @_type="contact" @_label="ManualSeal" @_state="false" @_variant="no"></element>
+        </branch>
+      </parallel>
+      <element @_id="rung_lubrication_5" @_type="coil" @_label="LubricationPump" @_state="false"></element>
+    </rung>
+    <rung @_id="rung_alarm_silence">
+      <element @_id="rung_alarm_silence_0" @_type="contact" @_label="ResetBtn" @_state="false" @_variant="no"></element>
+      <element @_id="rung_alarm_silence_1" @_type="contact" @_label="SystemHealthy" @_state="false" @_variant="no"></element>
+      <element @_id="rung_alarm_silence_2" @_type="contact" @_label="AlarmHorn" @_state="false" @_variant="no"></element>
+      <element @_id="rung_alarm_silence_3" @_type="coil" @_label="AlarmSilence" @_state="false"></element>
+    </rung>
+    <rung @_id="rung_heater_perm">
+      <element @_id="rung_heater_perm_0" @_type="contact" @_label="ModeAuto" @_state="false" @_variant="no"></element>
+      <element @_id="rung_heater_perm_1" @_type="contact" @_label="TempHigh" @_state="false" @_variant="nc"></element>
+      <element @_id="rung_heater_perm_2" @_type="contact" @_label="LowPressure" @_state="false" @_variant="nc"></element>
+      <element @_id="rung_heater_perm_3" @_type="contact" @_label="SystemHealthy" @_state="false" @_variant="no"></element>
+      <element @_id="rung_heater_perm_4" @_type="coil" @_label="HeaterPermissive" @_state="false"></element>
+    </rung>
+    <rung @_id="rung_diag_blink">
+      <element @_id="rung_diag_blink_0" @_type="contact" @_label="FaultSummary" @_state="false" @_variant="no"></element>
+      <element @_id="rung_diag_blink_1" @_type="contact" @_label="BlinkWindow" @_state="false" @_variant="no"></element>
+      <element @_id="rung_diag_blink_2" @_type="coil" @_label="DiagnosticsBlink" @_state="false"></element>
+    </rung>
+  </ladder>
+</project>
