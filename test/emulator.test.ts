@@ -70,12 +70,22 @@ const profile: PLCProfile = {
 };
 
 const profileManagerStub = {
-  getActiveProfile: () => profile
+  getActiveProfile: () => profile,
+  onDidChangeProfile: () => ({ dispose() {} })
 } as unknown as ProfileManager;
+
+function createPlcService(stBlocks: StructuredTextBlock[], ladderRungs: LadderRung[]): PLCopenService {
+  return {
+    getStructuredTextBlocks: () => stBlocks,
+    getLadderRungs: () => ladderRungs,
+    onDidChangeModel: () => ({ dispose() {} })
+  } as unknown as PLCopenService;
+}
 
 describe('EmulatorController', () => {
   it('updates variables and outputs after a scan cycle', () => {
     const ioService = new IOSimService();
+    const plcServiceStub = createPlcService([structuredText], ladder);
     const emulator = new EmulatorController(plcServiceStub, ioService, profileManagerStub);
     const internal = emulator as unknown as { seedVariables: () => void; scanCycle: () => void; variables: Map<string, unknown> };
 
@@ -97,10 +107,7 @@ describe('EmulatorController', () => {
     const ioService = new IOSimService();
     ioService.syncFromProject({ pous: [], ladder: selfHoldLadder });
 
-    const plcStub = {
-      getStructuredTextBlocks: () => [],
-      getLadderRungs: () => selfHoldLadder
-    } as unknown as PLCopenService;
+    const plcStub = createPlcService([], selfHoldLadder);
 
     const emulator = new EmulatorController(plcStub, ioService, profileManagerStub);
     const internal = emulator as unknown as { seedVariables: () => void; scanCycle: () => void };
@@ -126,5 +133,41 @@ describe('EmulatorController', () => {
     internal.scanCycle();
     outputs = ioService.getState().outputs;
     expect(outputs.find(output => output.label === 'Y0')?.value).toBe(false);
+  });
+
+  it('executes Structured Text control flow constructs', () => {
+    const controlFlowProgram: StructuredTextBlock = {
+      name: 'ControlFlow',
+      body: [
+        'PROGRAM ControlFlow',
+        '  VAR',
+        '    Sum : INT := 0;',
+        '    Index : INT := 0;',
+        '    Flag : BOOL := FALSE;',
+        '  END_VAR',
+        '  FOR Index := 1 TO 3 DO',
+        '    Sum := Sum + Index;',
+        '  END_FOR;',
+        '  IF Sum = 6 THEN',
+        '    Flag := TRUE;',
+        '  END_IF;',
+        '  WHILE Index > 0 DO',
+        '    Index := Index - 1;',
+        '  END_WHILE;',
+        'END_PROGRAM'
+      ].join('\n')
+    };
+
+    const ioService = new IOSimService();
+    const plcService = createPlcService([controlFlowProgram], []);
+    const emulator = new EmulatorController(plcService, ioService, profileManagerStub);
+    const internal = emulator as unknown as { seedVariables: () => void; scanCycle: () => void; variables: Map<string, unknown> };
+
+    internal.seedVariables();
+    internal.scanCycle();
+
+    expect(internal.variables.get('Sum')).toBe(6);
+    expect(internal.variables.get('Flag')).toBe(true);
+    expect(internal.variables.get('Index')).toBe(0);
   });
 });

@@ -6,7 +6,7 @@ import { EmulatorController } from '../runtime/emulator';
 
 export class HmiRuntimePanelManager {
   private panel: vscode.WebviewPanel | undefined;
-  private latestVariables: Record<string, number | boolean> = {};
+  private latestVariables: Record<string, number | boolean | string> = {};
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -55,11 +55,17 @@ export class HmiRuntimePanelManager {
         if (!b) { return; }
         if (b.target === 'input') {
           this.ioService.setInputValue(b.symbol, Boolean(value));
-        } else if (b.target === 'variable') {
-          this.emulator.writeVariable(b.symbol, typeof value === 'number' ? value : Boolean(value));
-        } else {
-          // outputs are read-only in runtime
+          break;
         }
+        if (b.target === 'variable') {
+          if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'string') {
+            this.emulator.writeVariable(b.symbol, value);
+          } else {
+            this.emulator.writeVariable(b.symbol, Boolean(value));
+          }
+          break;
+        }
+        // outputs are read-only in runtime
         break;
       }
       default:

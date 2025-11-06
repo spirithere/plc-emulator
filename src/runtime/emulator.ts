@@ -3,17 +3,20 @@ import { PLCopenService } from '../services/plcopenService';
 import { LadderElement, LadderRung, StructuredTextBlock } from '../types';
 import { IOSimService } from '../io/ioService';
 import { ProfileManager } from './profileManager';
+import { StructuredTextRuntime } from './st/runtime';
 
 export class EmulatorController {
   private scanHandle: NodeJS.Timeout | undefined;
-  private readonly variables = new Map<string, number | boolean>();
+  private readonly variables = new Map<string, number | boolean | string>();
   private readonly output = vscode.window.createOutputChannel('PLC Emulator');
   private readonly statusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
-  private readonly stateEmitter = new vscode.EventEmitter<Record<string, number | boolean>>();
+  private readonly stateEmitter = new vscode.EventEmitter<Record<string, number | boolean | string>>();
   private readonly runStateEmitter = new vscode.EventEmitter<boolean>();
   public readonly onDidUpdateState = this.stateEmitter.event;
   public readonly onDidChangeRunState = this.runStateEmitter.event;
   private running = false;
+  private readonly stRuntime: StructuredTextRuntime;
+  private readonly disposables: vscode.Disposable[] = [];
 
   constructor(
     private readonly plcService: PLCopenService,
@@ -21,6 +24,13 @@ export class EmulatorController {
     private readonly profileManager: ProfileManager
   ) {
     this.statusItem.hide();
+    this.stRuntime = new StructuredTextRuntime(this.ioService, message =>
+      this.output.appendLine(`[StructuredText] ${message}`)
+    );
+    const disposable = this.plcService.onDidChangeModel(() => {
+      this.stRuntime.invalidate();
+    });
+    this.disposables.push(disposable);
   }
 
   public start(): void {
@@ -55,7 +65,7 @@ export class EmulatorController {
     return this.running;
   }
 
-  public writeVariable(identifier: string, value: number | boolean): void {
+  public writeVariable(identifier: string, value: number | boolean | string): void {
     this.variables.set(identifier, value);
   }
 
@@ -65,32 +75,11 @@ export class EmulatorController {
 
   private scanCycle(): void {
     const pous = this.plcService.getStructuredTextBlocks();
-    pous.forEach(block => this.executeStructuredText(block));
+    this.stRuntime.execute(pous, this.variables);
     this.executeLadder();
     const snapshot = Object.fromEntries(this.variables);
     this.output.appendLine(`[Emulator] Scan complete. Vars: ${JSON.stringify(snapshot)}`);
     this.stateEmitter.fire(snapshot);
-  }
-
-  private executeStructuredText(block: StructuredTextBlock): void {
-    const lines = block.body.split(/\r?\n/);
-    const assignmentRegex = /(\w+)\s*:=\s*([^;]+);/;
-    lines.forEach(line => {
-      const trimmed = line.trim();
-      if (trimmed.startsWith('VAR') || trimmed.startsWith('END_VAR')) {
-        return;
-      }
-
-      const match = trimmed.match(assignmentRegex);
-      if (!match) {
-        return;
-      }
-
-      const [, variable, expression] = match;
-      const value = this.evaluateExpression(expression.trim());
-      this.variables.set(variable, value);
-      this.ioService.setOutputValue(variable, value !== 0);
-    });
   }
 
   private executeLadder(): void {
@@ -166,56 +155,18 @@ export class EmulatorController {
     return Boolean(value);
   }
 
-  private evaluateExpression(expression: string): number {
-    const sanitized = expression.replace(/[^0-9A-Za-z_+\-*/(). ]/g, '');
-    const substituted = sanitized.replace(/\b([A-Za-z_][A-Za-z0-9_]*)\b/g, (_match, identifier) => {
-      const value = this.getSymbolValue(identifier);
-      if (value === undefined) {
-        return '0';
-      }
-      return typeof value === 'number' ? String(value) : value ? '1' : '0';
-    });
-
-    try {
-      // eslint-disable-next-line no-new-func
-      const fn = new Function(`return (${substituted});`);
-      const result = fn();
-      if (typeof result === 'number' && Number.isFinite(result)) {
-        return result;
-      }
-      return 0;
-    } catch {
-      return 0;
-    }
-  }
-
   private seedVariables(): void {
     this.variables.clear();
+    this.stRuntime.reset();
     const blocks = this.plcService.getStructuredTextBlocks();
-    const initRegex = /(\w+)\s*:\s*\w+\s*:=\s*([^;]+);/;
-    blocks.forEach(block => {
-      block.body.split(/\r?\n/).forEach(line => {
-        const trimmed = line.trim();
-        const initMatch = trimmed.match(initRegex);
-        if (initMatch) {
-          const [, variable, expression] = initMatch;
-          this.variables.set(variable, this.evaluateExpression(expression));
-        }
-      });
-    });
+    this.stRuntime.seed(blocks, this.variables);
   }
 
-  private getSymbolValue(identifier: string): number | boolean | undefined {
-    if (this.variables.has(identifier)) {
-      return this.variables.get(identifier);
-    }
-
-    const ioValue = this.ioService.getInputValue(identifier);
-    if (ioValue !== undefined) {
-      return ioValue;
-    }
-
-    return undefined;
+  public dispose(): void {
+    this.stop();
+    this.statusItem.dispose();
+    this.output.dispose();
+    this.disposables.forEach(disposable => disposable.dispose());
   }
 
   private inferAddrType(identifier: string | undefined): 'X' | 'M' | 'Y' | undefined {

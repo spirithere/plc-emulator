@@ -5,7 +5,7 @@ import { EmulatorController } from '../runtime/emulator';
 
 export class LadderPanelManager {
   private panel: vscode.WebviewPanel | undefined;
-  private latestRuntime: { running: boolean; variables: Record<string, number | boolean> } = {
+  private latestRuntime: { running: boolean; variables: Record<string, number | boolean | string> } = {
     running: false,
     variables: {}
   };

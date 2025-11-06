@@ -164,7 +164,6 @@
           "when": "view == plcPouExplorer",
           "group": "navigation@8"
         },
-
         {
           "command": "plcEmu.run",
           "when": "view == plcRuntimeControls && !plcEmu.running",
@@ -285,6 +284,7 @@
     "vitest": "^1.6.1"
   },
   "dependencies": {
+    "chevrotain": "^10.5.0",
     "fast-xml-parser": "^5.3.1"
   }
 }

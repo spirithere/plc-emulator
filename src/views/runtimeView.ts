@@ -5,7 +5,7 @@ import { ProfileManager } from '../runtime/profileManager';
 
 export class RuntimeViewProvider implements vscode.WebviewViewProvider {
   private view?: vscode.WebviewView;
-  private latestVariables: Record<string, number | boolean> = {};
+  private latestVariables: Record<string, number | boolean | string> = {};
 
   constructor(
     private readonly extensionUri: vscode.Uri,

@@ -5,30 +5,32 @@
         <body ST="PROGRAM MotorLatch
   VAR
     StartBtn : BOOL := FALSE;
-    CancelBtn : BOOL := TRUE;
+    CancelBtn : BOOL := FALSE;
     Motor : BOOL := FALSE;
     Lamp : BOOL := FALSE;
     OscValue : INT := 0;
     Rising : BOOL := TRUE;
   END_VAR
 
-    IF Rising THEN
-      IF OscValue &gt;= 100 THEN
-        Rising := FALSE;
-        OscValue := 99;
-      ELSE
-        OscValue := OscValue + 1;
-      END_IF;
+  IF Rising THEN
+    IF OscValue &gt;= 100 THEN
+      Rising := FALSE;
+      OscValue := 99;
     ELSE
-      IF OscValue &lt;= 0 THEN
-        Rising := TRUE;
-        OscValue := 1;
-      ELSE
-        OscValue := OscValue - 1;
-      END_IF;
+      OscValue := OscValue + 1;
     END_IF;
+  ELSE
+    IF OscValue &lt;= 0 THEN
+      Rising := TRUE;
+      OscValue := 1;
+    ELSE
+      OscValue := OscValue - 1;
+    END_IF;
+  END_IF;
   IF StartBtn AND NOT CancelBtn THEN
     Motor := TRUE;
+  ELSIF CancelBtn THEN
+    Motor := FALSE;
   END_IF;
   Lamp := Motor;
 END_PROGRAM"></body>
