@@ -89,23 +89,34 @@ export class IOSimService {
 
   public setInputValue(identifier: string, value: boolean): void {
     const channel = this.findChannel(this.inputs, identifier);
+    let mutated = false;
     if (!channel) {
       this.inputs.push({ id: identifier, label: identifier, type: 'input', value });
-    } else {
+      mutated = true;
+    } else if (channel.value !== value) {
       channel.value = value;
+      mutated = true;
     }
-    this.emit();
+
+    if (mutated) {
+      this.emit();
+    }
   }
 
   public setOutputValue(identifier: string, value: boolean): void {
     let channel = this.findChannel(this.outputs, identifier);
+    let mutated = false;
     if (!channel) {
       channel = { id: identifier, label: identifier, type: 'output', value };
       this.outputs.push(channel);
-    } else {
+      mutated = true;
+    } else if (channel.value !== value) {
       channel.value = value;
+      mutated = true;
     }
-    this.emit();
+    if (mutated) {
+      this.emit();
+    }
   }
 
   public getInputValue(identifier: string): boolean | undefined {

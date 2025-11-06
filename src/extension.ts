@@ -8,7 +8,7 @@ import { IOPanelManager } from './io/ioPanel';
 import { ProfileManager } from './runtime/profileManager';
 import { POUTreeProvider } from './views/pouTree';
 import { RuntimeViewProvider } from './views/runtimeView';
-import { QuickActionsViewProvider } from './views/quickActionsView';
+// Quick actions are now exposed as view title toolbar items via menus; no webview needed.
 
 let plcService: PLCopenService;
 let ladderManager: LadderPanelManager;
@@ -18,18 +18,20 @@ let emulator: EmulatorController;
 let profileManager: ProfileManager;
 let pouTreeProvider: POUTreeProvider;
 let runtimeViewProvider: RuntimeViewProvider;
-let quickActionsViewProvider: QuickActionsViewProvider;
+// no quickActionsViewProvider
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   plcService = new PLCopenService();
-  ladderManager = new LadderPanelManager(context.extensionUri, plcService);
   ioService = new IOSimService();
   ioPanel = new IOPanelManager(context.extensionUri, ioService);
   profileManager = new ProfileManager(context);
   emulator = new EmulatorController(plcService, ioService, profileManager);
+  ladderManager = new LadderPanelManager(context.extensionUri, plcService, emulator);
   pouTreeProvider = new POUTreeProvider(plcService);
   runtimeViewProvider = new RuntimeViewProvider(context.extensionUri, emulator, ioService, profileManager);
-  quickActionsViewProvider = new QuickActionsViewProvider(context.extensionUri);
+  // Set up a context key to toggle Run/Stop toolbar items
+  const setRunningContext = (running: boolean): Thenable<unknown> =>
+    vscode.commands.executeCommand('setContext', 'plcEmu.running', running);
 
   const syncIoFromModel = (): void => {
     ioService.syncFromProject(plcService.getModel());
@@ -61,9 +63,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
     }),
     vscode.window.registerTreeDataProvider('plcPouExplorer', pouTreeProvider),
-    vscode.window.registerWebviewViewProvider('plcRuntimeControls', runtimeViewProvider),
-    vscode.window.registerWebviewViewProvider('plcQuickActions', quickActionsViewProvider)
+    vscode.window.registerWebviewViewProvider('plcRuntimeControls', runtimeViewProvider)
   );
+
+  // initialize and maintain the running state context key
+  await setRunningContext(emulator.isRunning());
+  emulator.onDidChangeRunState(running => { void setRunningContext(running); });
 
   await plcService.loadFromWorkspaceSetting();
   pouTreeProvider.refresh();

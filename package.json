@@ -21,7 +21,6 @@
     "onCommand:plcEmu.switchProfile",
     "onCommand:plcEmu.run",
     "onCommand:plcEmu.stop",
-    "onView:plcQuickActions",
     "onView:plcPouExplorer",
     "onView:plcRuntimeControls"
   ],
@@ -29,11 +28,13 @@
     "commands": [
       {
         "command": "plcEmu.openProject",
-        "title": "PLC Emulator: Open PLCopen Project"
+        "title": "PLC Emulator: Open PLCopen Project",
+        "icon": "$(folder-opened)"
       },
       {
         "command": "plcEmu.openStructuredText",
-        "title": "PLC Emulator: Edit Structured Text Block"
+        "title": "PLC Emulator: Edit Structured Text Block",
+        "icon": "$(file-code)"
       },
       {
         "command": "plcEmu.openStructuredTextBlock",
@@ -41,23 +42,28 @@
       },
       {
         "command": "plcEmu.openLadderEditor",
-        "title": "PLC Emulator: Open Ladder Editor"
+        "title": "PLC Emulator: Open Ladder Editor",
+        "icon": "$(list-tree)"
       },
       {
         "command": "plcEmu.openIOSimulator",
-        "title": "PLC Emulator: Open I/O Simulator"
+        "title": "PLC Emulator: Open I/O Simulator",
+        "icon": "$(circuit-board)"
       },
       {
         "command": "plcEmu.switchProfile",
-        "title": "PLC Emulator: Switch Dialect Profile"
+        "title": "PLC Emulator: Switch Dialect Profile",
+        "icon": "$(gear)"
       },
       {
         "command": "plcEmu.run",
-        "title": "PLC Emulator: Run Program"
+        "title": "PLC Emulator: Run Program",
+        "icon": "$(play)"
       },
       {
         "command": "plcEmu.stop",
-        "title": "PLC Emulator: Stop Program"
+        "title": "PLC Emulator: Stop Program",
+        "icon": "$(stop)"
       }
     ],
     "viewsContainers": {
@@ -72,17 +78,87 @@
     "views": {
       "plcEmuSidebar": [
         {
-          "id": "plcQuickActions",
-          "name": "Quick Actions",
-          "type": "webview"
-        },
-        {
           "id": "plcPouExplorer",
           "name": "POUs"
         },
         {
           "id": "plcRuntimeControls",
           "name": "Runtime"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "plcEmu.run",
+          "when": "view == plcPouExplorer && !plcEmu.running",
+          "group": "navigation@1"
+        },
+        {
+          "command": "plcEmu.stop",
+          "when": "view == plcPouExplorer && plcEmu.running",
+          "group": "navigation@1"
+        },
+        {
+          "command": "plcEmu.openProject",
+          "when": "view == plcPouExplorer",
+          "group": "navigation@2"
+        },
+        {
+          "command": "plcEmu.openStructuredText",
+          "when": "view == plcPouExplorer",
+          "group": "navigation@3"
+        },
+        {
+          "command": "plcEmu.openLadderEditor",
+          "when": "view == plcPouExplorer",
+          "group": "navigation@4"
+        },
+        {
+          "command": "plcEmu.openIOSimulator",
+          "when": "view == plcPouExplorer",
+          "group": "navigation@5"
+        },
+        {
+          "command": "plcEmu.switchProfile",
+          "when": "view == plcPouExplorer",
+          "group": "navigation@6"
+        },
+
+        {
+          "command": "plcEmu.run",
+          "when": "view == plcRuntimeControls && !plcEmu.running",
+          "group": "navigation@1"
+        },
+        {
+          "command": "plcEmu.stop",
+          "when": "view == plcRuntimeControls && plcEmu.running",
+          "group": "navigation@1"
+        },
+        {
+          "command": "plcEmu.openProject",
+          "when": "view == plcRuntimeControls",
+          "group": "navigation@2"
+        },
+        {
+          "command": "plcEmu.openStructuredText",
+          "when": "view == plcRuntimeControls",
+          "group": "navigation@3"
+        },
+        {
+          "command": "plcEmu.openLadderEditor",
+          "when": "view == plcRuntimeControls",
+          "group": "navigation@4"
+        },
+        {
+          "command": "plcEmu.openIOSimulator",
+          "when": "view == plcRuntimeControls",
+          "group": "navigation@5"
+        },
+        {
+          "command": "plcEmu.switchProfile",
+          "when": "view == plcRuntimeControls",
+          "group": "navigation@6"
         }
       ]
     },

@@ -91,10 +91,42 @@ export class EmulatorController {
   }
 
   private executeRung(rung: LadderRung): void {
-    this.executeSeries(rung.elements, true);
-    rung.branches?.forEach(branch => {
-      this.executeSeries(branch.elements, true);
+    const elements = rung.elements;
+    const cols = elements.length;
+    const startPower: boolean[] = Array(cols + 1).fill(false);
+    startPower[0] = true;
+
+    const byStart = new Map<number, LadderRung['branches']>();
+    rung.branches?.forEach(br => {
+      const list = byStart.get(br.startColumn) ?? [];
+      list.push(br);
+      byStart.set(br.startColumn, list);
     });
+
+    for (let i = 0; i < cols; i += 1) {
+      const incoming = startPower[i];
+
+      const branches = byStart.get(i) ?? [];
+      for (const br of branches) {
+        const branchOut = this.executeSeries(br.elements, incoming);
+        const endIdx = Math.min(Math.max(br.endColumn, i + 1), cols);
+        startPower[endIdx] = startPower[endIdx] || branchOut;
+      }
+
+      const el = elements[i];
+      let next = incoming;
+      if (el.type === 'contact') {
+        const raw = this.resolveSignal(el.label, el.state ?? true);
+        const closed = el.variant === 'nc' ? !raw : raw;
+        next = incoming && closed;
+      } else if (el.type === 'coil') {
+        this.variables.set(el.label, incoming);
+        this.ioService.setOutputValue(el.label, incoming);
+        next = incoming; // power rail continues past coils
+      }
+
+      startPower[i + 1] = startPower[i + 1] || next;
+    }
   }
 
   private executeSeries(elements: LadderElement[], initialPower: boolean): boolean {

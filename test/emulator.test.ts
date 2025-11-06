@@ -23,8 +23,36 @@ const ladder: LadderRung[] = [
         elements: [
           { id: 'b_contact', label: 'Motor', type: 'contact', state: true },
           { id: 'b_coil', label: 'AuxMotor', type: 'coil', state: false }
-        ]
+        ],
+        startColumn: 0,
+        endColumn: 1
       }
+    ]
+  }
+];
+
+const selfHoldLadder: LadderRung[] = [
+  {
+    id: 'self_hold_0',
+    elements: [
+      { id: 'start', label: 'X1', type: 'contact', state: false, variant: 'no' },
+      { id: 'stop', label: 'X5', type: 'contact', state: false, variant: 'nc' },
+      { id: 'latch', label: 'M0', type: 'coil', state: false }
+    ],
+    branches: [
+      {
+        id: 'self_hold_branch',
+        elements: [{ id: 'latch_contact', label: 'M0', type: 'contact', state: false, variant: 'no' }],
+        startColumn: 0,
+        endColumn: 1
+      }
+    ]
+  },
+  {
+    id: 'self_hold_1',
+    elements: [
+      { id: 'latch_series', label: 'M0', type: 'contact', state: false, variant: 'no' },
+      { id: 'output', label: 'Y0', type: 'coil', state: false }
     ]
   }
 ];
@@ -63,5 +91,40 @@ describe('EmulatorController', () => {
 
     const aux = outputs.find(output => output.label === 'AuxMotor');
     expect(aux?.value).toBe(true);
+  });
+
+  it('supports toggling ladder contacts via the IO simulator during execution', () => {
+    const ioService = new IOSimService();
+    ioService.syncFromProject({ pous: [], ladder: selfHoldLadder });
+
+    const plcStub = {
+      getStructuredTextBlocks: () => [],
+      getLadderRungs: () => selfHoldLadder
+    } as unknown as PLCopenService;
+
+    const emulator = new EmulatorController(plcStub, ioService, profileManagerStub);
+    const internal = emulator as unknown as { seedVariables: () => void; scanCycle: () => void };
+
+    internal.seedVariables();
+
+    expect(ioService.getState().inputs.find(input => input.id === 'X1')).toBeDefined();
+    expect(ioService.getState().inputs.find(input => input.id === 'X5')).toBeDefined();
+
+    ioService.setInputValue('X1', true);
+    internal.scanCycle();
+
+    let outputs = ioService.getState().outputs;
+    expect(outputs.find(output => output.label === 'Y0')?.value).toBe(true);
+
+    // Releasing X1 should keep the latch energized (until X5 is pressed)
+    ioService.setInputValue('X1', false);
+    internal.scanCycle();
+    outputs = ioService.getState().outputs;
+    expect(outputs.find(output => output.label === 'Y0')?.value).toBe(true);
+
+    ioService.setInputValue('X5', true);
+    internal.scanCycle();
+    outputs = ioService.getState().outputs;
+    expect(outputs.find(output => output.label === 'Y0')?.value).toBe(false);
   });
 });

@@ -1,17 +1,30 @@
 const vscode = acquireVsCodeApi();
 let state = { inputs: [], outputs: [] };
+let lastKey = '';
+let scheduled = false;
 
 window.addEventListener('message', event => {
-  if (event.data?.type === 'state') {
-    state = event.data.payload;
-    render();
-  }
+  if (event.data?.type !== 'state') return;
+  const next = event.data.payload;
+  const key = JSON.stringify(next);
+  if (key === lastKey) return; // ignore identical snapshots
+  state = next;
+  lastKey = key;
+  scheduleRender();
 });
+
+function scheduleRender() {
+  if (scheduled) return;
+  scheduled = true;
+  requestAnimationFrame(() => {
+    scheduled = false;
+    render();
+  });
+}
 
 function render() {
   const root = document.getElementById('app');
   root.innerHTML = '';
-
   root.appendChild(section('Inputs', state.inputs, true));
   root.appendChild(section('Outputs', state.outputs, false));
 }
@@ -44,13 +57,8 @@ function section(title, channels, isInput) {
     const toggle = document.createElement('button');
     toggle.textContent = channel.value ? 'ON' : 'OFF';
     if (isInput) {
-      toggle.onclick = () => {
-        vscode.postMessage({
-          type: 'toggleInput',
-          id: channel.id,
-          value: !channel.value
-        });
-      };
+      toggle.dataset.id = channel.id;
+      toggle.dataset.role = 'input-toggle';
     } else {
       toggle.disabled = true;
     }
@@ -61,5 +69,14 @@ function section(title, channels, isInput) {
 
   return wrapper;
 }
+
+document.addEventListener('click', e => {
+  const btn = e.target.closest('[data-role="input-toggle"]');
+  if (!btn) return;
+  const id = btn.dataset.id;
+  const ch = state.inputs.find(c => c.id === id);
+  if (!ch) return;
+  vscode.postMessage({ type: 'toggleInput', id, value: !ch.value });
+});
 
 render();

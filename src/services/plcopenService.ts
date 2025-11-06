@@ -145,13 +145,30 @@ export class PLCopenService implements vscode.Disposable {
   }
 
   private extractElements(nodes: any[] | undefined, parentId: string): LadderElement[] {
-    return nodes?.map((node: any, elementIndex: number) => ({
-      id: node?.id ?? `${parentId}_${elementIndex}`,
-      label: node?.label ?? node?.name ?? 'Contact',
-      type: node?.type === 'coil' ? 'coil' : 'contact',
-      state: node?.state === 'true',
-      variant: node?.variant ?? node?.['@_variant'] ?? 'no'
-    })) ?? [];
+    const readAttr = (node: any, key: string): any => node?.[key] ?? node?.[`_${key}`] ?? node?.[`@_${key}`];
+
+    return nodes?.map((node: any, elementIndex: number) => {
+      const id = readAttr(node, 'id') ?? `${parentId}_${elementIndex}`;
+      const label = readAttr(node, 'label') ?? readAttr(node, 'name') ?? 'Contact';
+      const typeRaw = readAttr(node, 'type');
+      const stateRaw = readAttr(node, 'state');
+      const variant = readAttr(node, 'variant') ?? 'no';
+
+      let state: boolean | undefined;
+      if (stateRaw === 'true' || stateRaw === true) {
+        state = true;
+      } else if (stateRaw === 'false' || stateRaw === false) {
+        state = false;
+      }
+
+      return {
+        id,
+        label,
+        type: typeRaw === 'coil' ? 'coil' : 'contact',
+        state,
+        variant
+      };
+    }) ?? [];
   }
 
   private extractBranches(rungNode: any): LadderBranch[] | undefined {

@@ -1,12 +1,29 @@
 import * as vscode from 'vscode';
 import { PLCopenService } from '../services/plcopenService';
 import { LadderRung } from '../types';
+import { EmulatorController } from '../runtime/emulator';
 
 export class LadderPanelManager {
   private panel: vscode.WebviewPanel | undefined;
+  private latestRuntime: { running: boolean; variables: Record<string, number | boolean> } = {
+    running: false,
+    variables: {}
+  };
 
-  constructor(private readonly contextUri: vscode.Uri, private readonly plcService: PLCopenService) {
+  constructor(
+    private readonly contextUri: vscode.Uri,
+    private readonly plcService: PLCopenService,
+    private readonly emulator: EmulatorController
+  ) {
     this.plcService.onDidChangeModel(() => this.postModel());
+    this.emulator.onDidUpdateState(snapshot => {
+      this.latestRuntime.variables = snapshot;
+      this.postRuntime();
+    });
+    this.emulator.onDidChangeRunState(running => {
+      this.latestRuntime.running = running;
+      this.postRuntime();
+    });
   }
 
   public show(): void {
@@ -37,7 +54,9 @@ export class LadderPanelManager {
       this.panel = undefined;
     });
 
+    this.latestRuntime.running = this.emulator.isRunning();
     this.postModel();
+    this.postRuntime();
   }
 
   private async handleLadderUpdate(rungs: LadderRung[]): Promise<void> {
@@ -53,6 +72,16 @@ export class LadderPanelManager {
     this.panel.webview.postMessage({
       type: 'model',
       ladder: this.plcService.getLadderRungs()
+    });
+  }
+
+  private postRuntime(): void {
+    if (!this.panel) {
+      return;
+    }
+    this.panel.webview.postMessage({
+      type: 'runtime',
+      payload: this.latestRuntime
     });
   }
 
