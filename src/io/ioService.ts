@@ -1,12 +1,13 @@
 import * as vscode from 'vscode';
 import { DigitalChannel, LadderElement, PLCProjectModel } from '../types';
+import { RuntimeIOAdapter } from '../runtime/runtimeTypes';
 
 export interface IOStateSnapshot {
   inputs: DigitalChannel[];
   outputs: DigitalChannel[];
 }
 
-export class IOSimService {
+export class IOSimService implements RuntimeIOAdapter {
   // Start with no predefined channels; populate from ladder/ST/HMI interactions.
   private readonly inputs: DigitalChannel[] = [];
 

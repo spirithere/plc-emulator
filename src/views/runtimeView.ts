@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { EmulatorController } from '../runtime/emulator';
+import { RuntimeController } from '../runtime/emulator';
 import { IOSimService } from '../io/ioService';
 import { ProfileManager } from '../runtime/profileManager';
 
@@ -9,7 +9,7 @@ export class RuntimeViewProvider implements vscode.WebviewViewProvider {
 
   constructor(
     private readonly extensionUri: vscode.Uri,
-    private readonly emulator: EmulatorController,
+    private readonly emulator: RuntimeController,
     private readonly ioService: IOSimService,
     private readonly profileManager: ProfileManager
   ) {

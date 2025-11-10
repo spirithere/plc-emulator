@@ -17,14 +17,14 @@ const SYMBOL_LABEL_COLOR = '#e1e7ff';
 
 let ladder = [];
 let previewMode = 'edit'; // 'edit' | 'symbol'
-let runtime = { running: false, variables: {} };
+let runtime = createRuntimeSnapshot();
 
 window.addEventListener('message', event => {
   if (event.data?.type === 'model') {
     ladder = event.data.ladder || [];
     render();
   } else if (event.data?.type === 'runtime') {
-    runtime = event.data.payload || runtime;
+    runtime = normalizeRuntimePayload(event.data.payload, runtime);
     // update in place to avoid scroll/hover thrash
     applyRuntimeHighlights();
   }
@@ -294,7 +294,8 @@ function drawRow(svg, layer, owner, elements, rowIndex, startColumn, endColumn, 
       drawCoilSymbol(svg, center, y, element, active, ref);
     } else {
       const active = Boolean(seriesHighlights?.symbolActive?.[elementIndex]);
-      drawContactSymbol(svg, center, y, element, active, ref);
+      const closed = isContactClosed(element);
+      drawContactSymbol(svg, center, y, element, active, ref, closed);
     }
 
     const card = createNodeCard(owner, elements, element, elementIndex);
@@ -497,6 +498,7 @@ function createNodeCard(owner, collection, element, elementIndex) {
   checkbox.checked = Boolean(element.state);
   checkbox.onchange = event => {
     element.state = event.target.checked;
+    render();
   };
   stateToggle.appendChild(checkbox);
   stateToggle.appendChild(document.createTextNode('Active'));
@@ -644,6 +646,8 @@ function drawContactSymbol(svg, x, y, element, active = false, ref, closedState)
     left.classList.add('active');
     right.classList.add('active');
   }
+  applyContactState(left, closedState);
+  applyContactState(right, closedState);
   svg.appendChild(left);
   svg.appendChild(right);
   if ((element?.variant ?? 'no') === 'nc') {
@@ -654,6 +658,7 @@ function drawContactSymbol(svg, x, y, element, active = false, ref, closedState)
     if (active) {
       diag.classList.add('active');
     }
+    applyContactState(diag, closedState);
     svg.appendChild(diag);
   }
   // bridge line to show closed state distinctly
@@ -661,11 +666,18 @@ function drawContactSymbol(svg, x, y, element, active = false, ref, closedState)
   bridge.classList.add('contact-bridge');
   bridge.dataset.ref = ref;
   bridge.dataset.role = 'contact-bridge';
-  if (typeof closedState === 'boolean') {
-    bridge.classList.toggle('closed', closedState);
-  }
+  applyContactState(bridge, closedState);
   svg.appendChild(bridge);
   drawLabel(svg, element, x, y + 28);
+}
+
+function applyContactState(node, closedState) {
+  if (!node || typeof closedState !== 'boolean') {
+    return;
+  }
+  const isClosed = !!closedState;
+  node.classList.toggle('closed', isClosed);
+  node.classList.toggle('open', !isClosed);
 }
 
 function drawCoilSymbol(svg, x, y, element, active = false, ref) {
@@ -778,6 +790,73 @@ function inferAddrType(label) {
   return undefined;
 }
 
+function createRuntimeSnapshot() {
+  return {
+    running: false,
+    variables: {},
+    io: {
+      inputs: Object.create(null),
+      outputs: Object.create(null)
+    }
+  };
+}
+
+function normalizeRuntimePayload(payload, previous = createRuntimeSnapshot()) {
+  if (!payload) {
+    return previous;
+  }
+  const snapshot = createRuntimeSnapshot();
+  snapshot.running = Boolean(payload.running);
+  snapshot.variables = payload.variables || previous.variables || {};
+  if (payload.io) {
+    snapshot.io.inputs = channelsToLookup(payload.io.inputs);
+    snapshot.io.outputs = channelsToLookup(payload.io.outputs);
+  } else {
+    snapshot.io.inputs = previous.io?.inputs || Object.create(null);
+    snapshot.io.outputs = previous.io?.outputs || Object.create(null);
+  }
+  return snapshot;
+}
+
+function channelsToLookup(channels) {
+  const table = Object.create(null);
+  if (!Array.isArray(channels)) {
+    return table;
+  }
+  channels.forEach(channel => {
+    const value = Boolean(channel?.value);
+    gatherChannelKeys(channel).forEach(key => {
+      if (key) {
+        table[key] = value;
+      }
+    });
+  });
+  return table;
+}
+
+function gatherChannelKeys(channel) {
+  const keys = new Set();
+  const id = normalizeChannelKey(channel?.id);
+  if (id) {
+    keys.add(id);
+    keys.add(id.toUpperCase());
+  }
+  const label = normalizeChannelKey(channel?.label);
+  if (label) {
+    keys.add(label);
+    keys.add(label.toUpperCase());
+  }
+  return Array.from(keys);
+}
+
+function normalizeChannelKey(value) {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  const key = String(value).trim();
+  return key || undefined;
+}
+
 render();
 
 // -------- Runtime Highlight Computation --------
@@ -867,11 +946,44 @@ function isContactClosed(element) {
 }
 
 function resolveSignal(label, fallback) {
+  const ioValue = lookupIoValue(label);
+  if (typeof ioValue === 'boolean') {
+    return ioValue;
+  }
   if (label && Object.prototype.hasOwnProperty.call(runtime.variables || {}, label)) {
     const v = runtime.variables[label];
     return typeof v === 'number' ? v !== 0 : !!v;
   }
   return !!fallback;
+}
+
+function lookupIoValue(label) {
+  if (!label) {
+    return undefined;
+  }
+  const key = String(label).trim();
+  if (!key) {
+    return undefined;
+  }
+  const candidates = runtime.io || {};
+  const inputs = candidates.inputs || {};
+  const outputs = candidates.outputs || {};
+  if (Object.prototype.hasOwnProperty.call(inputs, key)) {
+    return inputs[key];
+  }
+  if (Object.prototype.hasOwnProperty.call(outputs, key)) {
+    return outputs[key];
+  }
+  const upper = key.toUpperCase();
+  if (upper !== key) {
+    if (Object.prototype.hasOwnProperty.call(inputs, upper)) {
+      return inputs[upper];
+    }
+    if (Object.prototype.hasOwnProperty.call(outputs, upper)) {
+      return outputs[upper];
+    }
+  }
+  return undefined;
 }
 
 // Toggle only classes based on runtime to avoid full re-render
@@ -927,8 +1039,11 @@ function updateSeriesHighlights(canvas, rung, rowIndex, elements, seriesHighligh
       const bridge = canvas.querySelector(`[data-ref="${esc(ref)}"][data-role="contact-bridge"]`);
       const closed = isContactClosed(el);
       if (bridge) {
-        bridge.classList.toggle('closed', closed);
+        applyContactState(bridge, closed);
       }
+      verts.forEach(node => applyContactState(node, closed));
+      const diag = canvas.querySelectorAll(`[data-ref="${esc(ref)}"][data-role="contact-diag"]`);
+      diag.forEach(node => applyContactState(node, closed));
     } else if (el?.type === 'coil') {
       const coils = canvas.querySelectorAll(`[data-ref="${esc(ref)}"][data-role="coil"]`);
       const energized = !!seriesHighlights?.symbolActive?.[i];

@@ -1,22 +1,32 @@
 import * as vscode from 'vscode';
 import { PLCopenService } from '../services/plcopenService';
-import { LadderBranch, LadderElement, LadderRung, StructuredTextBlock } from '../types';
 import { IOSimService } from '../io/ioService';
 import { ProfileManager } from './profileManager';
-import { StructuredTextDiagnosticEvent, StructuredTextRuntime } from './st/runtime';
+import { StructuredTextDiagnosticEvent } from './st/runtime';
+import { RuntimeCore } from './runtimeCore';
+import { PlcModelProvider, RuntimeLogEvent, RuntimeStateEvent } from './runtimeTypes';
 
-export class EmulatorController {
-  private scanHandle: NodeJS.Timeout | undefined;
-  private readonly variables = new Map<string, number | boolean | string>();
+export interface RuntimeController extends vscode.Disposable {
+  start(): void | Promise<void>;
+  stop(): void | Promise<void>;
+  isRunning(): boolean;
+  writeVariable(identifier: string, value: number | boolean | string): void;
+  getVariableNames(): string[];
+  readonly onDidUpdateState: vscode.Event<Record<string, number | boolean | string>>;
+  readonly onDidChangeRunState: vscode.Event<boolean>;
+  onStructuredTextDiagnostics(listener: (event: StructuredTextDiagnosticEvent) => void): vscode.Disposable;
+}
+
+export class EmulatorController implements RuntimeController {
   private readonly output = vscode.window.createOutputChannel('PLC Emulator');
   private readonly statusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   private readonly stateEmitter = new vscode.EventEmitter<Record<string, number | boolean | string>>();
   private readonly runStateEmitter = new vscode.EventEmitter<boolean>();
+  private readonly runtime: RuntimeCore;
+  private readonly disposables: vscode.Disposable[] = [];
+
   public readonly onDidUpdateState = this.stateEmitter.event;
   public readonly onDidChangeRunState = this.runStateEmitter.event;
-  private running = false;
-  private readonly stRuntime: StructuredTextRuntime;
-  private readonly disposables: vscode.Disposable[] = [];
 
   constructor(
     private readonly plcService: PLCopenService,
@@ -24,250 +34,114 @@ export class EmulatorController {
     private readonly profileManager: ProfileManager
   ) {
     this.statusItem.hide();
-    this.stRuntime = new StructuredTextRuntime(this.ioService, message =>
-      this.output.appendLine(`[StructuredText] ${message}`)
-    );
-    const disposable = this.plcService.onDidChangeModel(() => {
-      this.stRuntime.invalidate();
+    this.runtime = new RuntimeCore({
+      modelProvider: this.createModelProvider(),
+      ioAdapter: this.ioService,
+      logger: event => this.appendLog(event),
+      defaultScanTimeMs: vscode.workspace.getConfiguration('plcEmu').get<number>('scanTimeMs') ?? 100
     });
-    this.disposables.push(disposable);
+
+    const stateDisposable = this.runtime.onState(event => this.handleState(event));
+    const runDisposable = this.runtime.onRunState(running => this.handleRunState(running));
+
+    this.disposables.push(this.toVsDisposable(stateDisposable), this.toVsDisposable(runDisposable));
   }
 
   public start(): void {
-    if (this.scanHandle) {
-      vscode.window.showWarningMessage('PLC emulator is already running.');
+    const scanTime = vscode.workspace.getConfiguration('plcEmu').get<number>('scanTimeMs') ?? 100;
+    const started = this.runtime.start(scanTime);
+    if (!started) {
+      void vscode.window.showWarningMessage('PLC emulator is already running.');
       return;
     }
-
-    this.seedVariables();
-    const scanTime = vscode.workspace.getConfiguration('plcEmu').get<number>('scanTimeMs') ?? 100;
-    this.output.appendLine(`[Emulator] Starting scan cycle (${scanTime} ms) using profile ${this.profileManager.getActiveProfile().title}`);
-    this.statusItem.text = `PLC ▶︎ ${scanTime}ms`;
-    this.statusItem.show();
-    this.running = true;
-    this.runStateEmitter.fire(true);
-
-    this.scanHandle = setInterval(() => this.scanCycle(), scanTime);
+    const profile = this.profileManager.getActiveProfile();
+    this.output.appendLine(
+      `[Emulator] Starting scan cycle (${this.runtime.getCurrentScanTime()} ms) using profile ${profile.title}`
+    );
   }
 
   public stop(): void {
-    if (this.scanHandle) {
-      clearInterval(this.scanHandle);
-      this.scanHandle = undefined;
-      this.statusItem.hide();
-      this.output.appendLine('[Emulator] Stopped.');
-      this.running = false;
-      this.runStateEmitter.fire(false);
+    if (!this.runtime.isRunning()) {
+      return;
     }
+    this.runtime.stop();
   }
 
   public isRunning(): boolean {
-    return this.running;
+    return this.runtime.isRunning();
   }
 
   public writeVariable(identifier: string, value: number | boolean | string): void {
-    this.variables.set(identifier, value);
+    this.runtime.writeVariable(identifier, value);
   }
 
   public getVariableNames(): string[] {
-    return Array.from(this.variables.keys());
+    return this.runtime.getVariableNames();
   }
 
   public onStructuredTextDiagnostics(listener: (event: StructuredTextDiagnosticEvent) => void): vscode.Disposable {
-    const dispose = this.stRuntime.onDiagnostics(listener);
-    return { dispose };
-  }
-
-  private scanCycle(): void {
-    const pous = this.plcService.getStructuredTextBlocks();
-    this.stRuntime.execute(pous, this.variables);
-    this.executeLadder();
-    const snapshot = Object.fromEntries(this.variables);
-    this.output.appendLine(`[Emulator] Scan complete. Vars: ${JSON.stringify(snapshot)}`);
-    this.stateEmitter.fire(snapshot);
-  }
-
-  private executeLadder(): void {
-    const rungs = this.plcService.getLadderRungs();
-    rungs.forEach(rung => this.executeRung(rung));
-  }
-
-  private executeRung(rung: LadderRung): void {
-    const elements = rung.elements;
-    const cols = elements.length;
-    const startPower: boolean[] = Array(cols + 1).fill(false);
-    startPower[0] = true;
-
-    const branchData: BranchRuntimeData[] = (rung.branches ?? []).map(branch => {
-      const conductive = branch.elements.map(el => this.isElementConductive(el));
-      return {
-        branch,
-        conductive,
-        fullyConductive: conductive.every(Boolean),
-        suffixReach: []
-      };
-    });
-
-    const branchesByStart = new Map<number, BranchRuntimeData[]>();
-    branchData.forEach(data => {
-      const startColumn = this.clampColumn(data.branch.startColumn, cols, 0);
-      const list = branchesByStart.get(startColumn) ?? [];
-      list.push(data);
-      branchesByStart.set(startColumn, list);
-    });
-
-    const elementConductive = elements.map(el => this.isElementConductive(el));
-    const rightReach = this.computeRightReach(elements, elementConductive, branchesByStart, cols);
-
-    branchData.forEach(data => {
-      data.suffixReach = this.computeBranchSuffixReach(data.branch, data.conductive, rightReach, cols);
-    });
-
-    for (let i = 0; i < cols; i += 1) {
-      const incoming = startPower[i];
-
-      const branches = branchesByStart.get(i) ?? [];
-      for (const br of branches) {
-        const branchOut = this.executeSeries(br.branch.elements, incoming, br.suffixReach);
-        const endIdx = this.clampColumn(br.branch.endColumn, cols, i + 1);
-        startPower[endIdx] = startPower[endIdx] || branchOut;
-      }
-
-      const el = elements[i];
-      let next = incoming;
-      if (el.type === 'contact') {
-        const raw = this.resolveSignal(el.label, el.state ?? true, (el as any).addrType);
-        const closed = el.variant === 'nc' ? !raw : raw;
-        next = incoming && closed;
-      } else if (el.type === 'coil') {
-        const canReachRight = rightReach[i + 1] ?? false;
-        const energized = incoming && canReachRight;
-        this.variables.set(el.label, energized);
-        this.ioService.setOutputValue(el.label, energized);
-        next = incoming; // power rail continues past coils
-      }
-
-      startPower[i + 1] = startPower[i + 1] || next;
-    }
-  }
-
-  private executeSeries(elements: LadderElement[], initialPower: boolean, suffixReach?: boolean[]): boolean {
-    let powerRail = initialPower;
-    elements.forEach((element, idx) => {
-      if (element.type === 'contact') {
-        const rawSignal = this.resolveSignal(element.label, element.state ?? true, (element as any).addrType);
-        const isClosed = element.variant === 'nc' ? !rawSignal : rawSignal;
-        powerRail = powerRail && isClosed;
-      } else if (element.type === 'coil') {
-        const canReachRight = suffixReach ? suffixReach[idx + 1] : true;
-        const energized = powerRail && canReachRight;
-        this.variables.set(element.label, energized);
-        this.ioService.setOutputValue(element.label, energized);
-      }
-    });
-    return powerRail;
-  }
-
-  private isElementConductive(element: LadderElement): boolean {
-    if (element.type === 'coil') {
-      return true;
-    }
-    const raw = this.resolveSignal(element.label, element.state ?? true, element.addrType);
-    return element.variant === 'nc' ? !raw : raw;
-  }
-
-  private computeRightReach(
-    elements: LadderElement[],
-    elementConductive: boolean[],
-    branchesByStart: Map<number, BranchRuntimeData[]>,
-    cols: number
-  ): boolean[] {
-    const rightReach = Array(cols + 1).fill(false);
-    rightReach[cols] = true;
-
-    for (let i = cols - 1; i >= 0; i -= 1) {
-      const el = elements[i];
-      const conductive = el.type === 'coil' ? true : elementConductive[i];
-      let canReach = conductive && rightReach[i + 1];
-
-      const branches = branchesByStart.get(i) ?? [];
-      for (const br of branches) {
-        const endColumn = this.clampColumn(br.branch.endColumn, cols, i + 1);
-        if (br.fullyConductive && rightReach[endColumn]) {
-          canReach = true;
-          break;
-        }
-      }
-
-      rightReach[i] = canReach;
-    }
-
-    return rightReach;
-  }
-
-  private computeBranchSuffixReach(
-    branch: LadderBranch,
-    conductive: boolean[],
-    rightReach: boolean[],
-    cols: number
-  ): boolean[] {
-    const len = branch.elements.length;
-    const suffix = Array(len + 1).fill(false);
-    const endColumn = this.clampColumn(branch.endColumn, cols, 0);
-    suffix[len] = rightReach[endColumn];
-
-    for (let idx = len - 1; idx >= 0; idx -= 1) {
-      suffix[idx] = conductive[idx] && suffix[idx + 1];
-    }
-
-    return suffix;
-  }
-
-  private clampColumn(column: number, cols: number, min = 0): number {
-    const lower = Math.max(0, Math.min(min, cols));
-    const value = Number.isFinite(column) ? column : 0;
-    return Math.min(Math.max(value, lower), cols);
-  }
-
-  private resolveSignal(label: string, fallback: boolean, addrType?: 'X'|'M'|'Y'): boolean {
-    const addr = addrType || this.inferAddrType(label);
-    if (addr === 'X') {
-      const ioValue = this.ioService.getInputValue(label);
-      if (ioValue !== undefined) return ioValue;
-    }
-    if (!this.variables.has(label)) {
-      this.variables.set(label, fallback);
-    }
-    const value = this.variables.get(label);
-    if (typeof value === 'number') return value !== 0;
-    return Boolean(value);
-  }
-
-  private seedVariables(): void {
-    this.variables.clear();
-    this.stRuntime.reset();
-    const blocks = this.plcService.getStructuredTextBlocks();
-    this.stRuntime.seed(blocks, this.variables);
+    const disposable = this.runtime.onStructuredTextDiagnostics(listener);
+    return this.toVsDisposable(disposable);
   }
 
   public dispose(): void {
-    this.stop();
+    this.runtime.dispose();
     this.statusItem.dispose();
     this.output.dispose();
     this.disposables.forEach(disposable => disposable.dispose());
   }
 
-  private inferAddrType(identifier: string | undefined): 'X' | 'M' | 'Y' | undefined {
-    if (!identifier) return undefined;
-    const c = String(identifier).trim().toUpperCase()[0];
-    if (c === 'X' || c === 'M' || c === 'Y') return c;
-    return undefined;
+  private handleState(event: RuntimeStateEvent): void {
+    this.output.appendLine(`[Emulator] Scan ${event.sequence} Vars: ${JSON.stringify(event.snapshot)}`);
+    this.stateEmitter.fire(event.snapshot);
+  }
+
+  private handleRunState(running: boolean): void {
+    if (running) {
+      this.statusItem.text = `PLC ▶︎ ${this.runtime.getCurrentScanTime()}ms`;
+      this.statusItem.show();
+    } else {
+      this.statusItem.hide();
+      this.output.appendLine('[Emulator] Stopped.');
+    }
+    this.runStateEmitter.fire(running);
+  }
+
+  private appendLog(event: RuntimeLogEvent): void {
+    const prefix = `[${event.level.toUpperCase()}][${event.scope}]`;
+    const details = event.details ? ` ${JSON.stringify(event.details)}` : '';
+    this.output.appendLine(`${prefix} ${event.message}${details}`);
+  }
+
+  private createModelProvider(): PlcModelProvider {
+    return {
+      getStructuredTextBlocks: () => this.plcService.getStructuredTextBlocks(),
+      getLadderRungs: () => this.plcService.getLadderRungs(),
+      onDidChangeModel: listener => {
+        const disposable = this.plcService.onDidChangeModel(() => listener());
+        return { dispose: () => disposable.dispose() };
+      }
+    };
+  }
+
+  /** @internal used by unit tests */
+  private seedVariables(): void {
+    this.runtime.debugSeedVariables();
+  }
+
+  /** @internal used by unit tests */
+  private scanCycle(): void {
+    this.runtime.debugScanCycle();
+  }
+
+  /** @internal used by unit tests */
+  private get variables(): Map<string, number | boolean | string> {
+    return this.runtime.debugGetMemory();
+  }
+
+  private toVsDisposable(disposable: { dispose(): void }): vscode.Disposable {
+    return {
+      dispose: () => disposable.dispose()
+    };
   }
 }
-
-type BranchRuntimeData = {
-  branch: LadderBranch;
-  conductive: boolean[];
-  fullyConductive: boolean;
-  suffixReach: boolean[];
-};

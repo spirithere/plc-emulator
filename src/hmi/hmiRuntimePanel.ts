@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { HmiService } from './hmiService';
 import { HmiBinding } from './types';
 import { IOSimService } from '../io/ioService';
-import { EmulatorController } from '../runtime/emulator';
+import { RuntimeController } from '../runtime/emulator';
 
 export class HmiRuntimePanelManager {
   private panel: vscode.WebviewPanel | undefined;
@@ -12,7 +12,7 @@ export class HmiRuntimePanelManager {
     private readonly extensionUri: vscode.Uri,
     private readonly hmiService: HmiService,
     private readonly ioService: IOSimService,
-    private readonly emulator: EmulatorController
+    private readonly emulator: RuntimeController
   ) {}
 
   public show(): void {

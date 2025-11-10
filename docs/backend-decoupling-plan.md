@@ -29,9 +29,9 @@
 ## 4. ターゲットアーキテクチャ
 | コンポーネント | 役割 |
 | --- | --- |
-| Runtime Host (Node CLI or service) | PLCopen モデル読み込み、スキャン実行、IO シミュレーション、状態キャプチャ。
-| Transport / Gateway | WebSocket + JSON-RPC (初期) でコマンド受信と状態配信。gRPC への差し替えを意識した抽象化。
-| Extension Client Adapter | VS Code 拡張側。既存 UI イベントを API コールに変換し、状態ストリームを UI/パネルへ反映。
+| Runtime Host (Node CLI or service) | PLCopen モデル読み込み、スキャン実行、IO シミュレーション、状態キャプチャ。v0 では `npm run host` で起動する JSON-RPC CLI が stdio + TCP (127.0.0.1:port) を同時に提供し、IO チャンネルの自動同期とブロードキャストを行う。
+| Transport / Gateway | ローカルは stdio + TCP ソケット。将来的に WebSocket/gRPC を差し替え可能にする抽象化。
+| Extension Client Adapter | VS Code 拡張側。`plcEmu.runtimeMode` 設定で embedded/external を切替え、UI イベントを API コールに変換し、状態ストリームを UI/パネルへ反映。
 | Agent SDK | CLI/ライブラリ（Node/ Python）で Runtime Host API を包み、AI エージェントが run/step/inspect/patch を行う。
 | Project Sync Service | PLCopen ファイルと Host 間で差分を同期。ファイル変更 → Host にインクリメンタル更新を送る。
 
@@ -59,18 +59,16 @@
 - **Access Control**: ローカルでは OS アカウントに紐づくソケット。リモートでは API Key or OAuth トークン。
 
 ## 6. 実装ステップ
-1. **Core 抽象化**
-   - `EmulatorController` を `RuntimeCore` (純 TypeScript, vscode 非依存) へ抽出。
-   - IO, Profile, PLCopen サービスにインターフェースを導入し、依存性注入で runtimes/clients を切り替え可能にする。
-2. **Runtime Host プロセス**
-   - Node CLI (`plc-emu-host`) を追加し、`RuntimeCore` を起動。
-   - IPC 層（JSON-RPC over stdio or socket）とシンプルなコマンドループを実装。
-3. **Streaming Gateway**
-   - Host 内で Pub/Sub バスを整備し、スキャン結果をストリーム化。
-   - 既存のログ/状態イベントをバス経由に置き換え、UI/Agent 両方が subscribe できるようにする。
-4. **Extension Adapter**
-   - VS Code 拡張から Runtime Host をサブプロセスとして管理（開始/終了/再接続）。
-   - 既存 UI（状態ビュー、IO シム、HMI、ST 診断）を新 API に順次載せ替え。
+1. **Core 抽象化** ✅
+   - `RuntimeCore` を切り出し、`RuntimeController` インターフェースで embedded/external 双方から再利用可能にした。
+   - IO/PLC モデル依存を抽象化 (`RuntimeIOAdapter`, `PlcModelProvider`) 済み。
+2. **Runtime Host プロセス** ✅
+   - Node CLI (`src/runtime/host/cli.ts`) を追加し、JSON-RPC over stdio で `runtime.start/stop`, `runtime.writeVar`, `project.load`, `io.setInput` を処理。
+3. **Streaming Gateway** ✅(v0)
+   - Host → Client で `runtime.state`, `runtime.runState`, `structuredText.diagnostics`, `host.ready` をストリーム。差分や cursor は今後対応。
+4. **Extension Adapter** ▶️（第1フェーズ完了）
+   - `RuntimeHostAdapter` + `ExternalRuntimeController` を追加し、`plcEmu.runtimeMode` 設定で in-process / external を切替え。
+   - 変数ストリーム/Run state/IO 反映/診断イベントを VS Code UI に橋渡し済み。再接続と複数クライアントは今後。
 5. **Agent 接続ポイント**
    - CLI/SDK（Node & Python）を公開し、`run`, `step`, `io`, `watch` コマンドを提供。
    - サンプル: Codex/Claude が `plc-emu host` を起動し、自動テストを実行。
@@ -95,11 +93,18 @@
 - **開発体験**: エージェントがログを解析できない → 全ログを JSON 形式で出力し、CLI で `--json` フラグを提供。
 
 ## 9. 進捗チェックリスト
-- [ ] RuntimeCore インターフェース化と VS Code 依存の排除
-- [ ] IPC/Transport 層プロトタイピング（JSON-RPC over WebSocket/UDS）
-- [ ] Runtime Host CLI (`plc-emu host`) 起動 + 基本コマンド
+- [x] RuntimeCore インターフェース化と VS Code 依存の排除（`RuntimeController`/`RuntimeCore`/`RuntimeIOAdapter` 導入）
+- [x] IPC/Transport 層プロトタイピング（JSON-RPC over stdio CLI）
+- [x] Runtime Host CLI (`npm run host`) 起動 + 基本コマンド
 - [ ] 状態ストリームの差分配送 + 再接続サポート
-- [ ] Extension 側アダプター実装＆既存 UI からの移行
+- [~] Extension 側アダプター実装＆既存 UI からの移行（embedded/external 切替と主要 UI の state 連携は完了。IO 録画/高度機能は未対応）
 - [ ] Agent SDK + サンプルワークフロー（自動テスト, IO スクリプト）
 - [ ] 観測・監視（metrics/logs/health）
 - [ ] 負荷/フェイルオーバー試験完了
+
+## 10. 最新アップデート（2025-11-10）
+- `plcEmu.runtimeMode` 設定で「embedded / external」を切替。external 選択時は `RuntimeHostAdapter` が `out/runtime/host/cli.js` を子プロセスとして起動し、`ExternalRuntimeController` 経由で Run/Stop・変数ストリーム・IO 書き込みを VS Code UI に反映。
+- Host 側は `runtime.state`, `runtime.runState`, `structuredText.diagnostics` を push。Extension 側の IO シミュレーター入力は `io.setInput` RPC で host に転送し、host からの coil 変化は `IOSimService.setOutputValue` へ反映して HMI/IO パネルを同期。
+- CLI がクラッシュ/終了した際には自動で再起動し、PLC モデルを再同期（再スタート前は RUN state を false に戻す）。操作方法および TCP 経由のマルチクライアント接続方法は `docs/runtime-host-cli.md` にまとめた。
+- `runtime.state` 通知と `state.get` には IO スナップショットが含まれ、`plcrun` などの外部クライアントが X/Y チャンネルも確認・制御できるようになった。
+- 既存の Vitest は `RuntimeCore` 抽象化後も全件パス（`npm test`）。external モードは現状ローカル stdio のみで、差分配信/多クライアント対応は次フェーズで拡張予定。
