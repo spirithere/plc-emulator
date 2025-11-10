@@ -19,6 +19,7 @@ interface BlockCacheEntry {
   sectionByName: Map<string, VarSectionType>;
   runtimeDiagnostics: RuntimeDiagnostic[];
   lastDiagnosticsSignature?: string;
+  typeByName: Map<string, string>;
 }
 
 export type RuntimeDiagnosticSeverity = 'error' | 'warning';
@@ -110,6 +111,7 @@ export class StructuredTextRuntime {
     const canonicalNames = new Map<string, string>();
     const tempVarNames = new Set<string>();
     const sectionByName = new Map<string, VarSectionType>();
+    const typeByName = new Map<string, string>();
 
     varSections.forEach(section => {
       section.declarations.forEach(declaration => {
@@ -117,6 +119,7 @@ export class StructuredTextRuntime {
         const key = this.normalize(canonical);
         canonicalNames.set(key, canonical);
         sectionByName.set(key, section.section);
+        typeByName.set(key, declaration.dataType);
         if (section.section === 'VAR_TEMP') {
           tempVars.push(declaration);
           tempVarNames.add(key);
@@ -138,7 +141,8 @@ export class StructuredTextRuntime {
       tempVarNames,
       sectionByName,
       runtimeDiagnostics: [],
-      lastDiagnosticsSignature: undefined
+      lastDiagnosticsSignature: undefined,
+      typeByName
     };
 
     this.cache.set(block.name, entry);
@@ -278,18 +282,21 @@ export class StructuredTextRuntime {
     }
 
     const identifier = path[path.length - 1];
-    const key = this.resolveKey(entry, identifier, entry.tempVarNames.has(this.normalize(identifier)) ? tempMemory : memory) ?? identifier;
+    const normalizedName = this.normalize(identifier);
+    const key = this.resolveKey(entry, identifier, entry.tempVarNames.has(normalizedName) ? tempMemory : memory) ?? identifier;
     const normalizedKey = key;
-    const isTemp = entry.tempVarNames.has(this.normalize(identifier));
+    const isTemp = entry.tempVarNames.has(normalizedName);
+    const dataType = entry.typeByName.get(normalizedName);
+    const coercedValue = dataType ? this.coerceToType(value, dataType) : value;
 
     if (isTemp) {
-      tempMemory.set(normalizedKey, value);
+      tempMemory.set(normalizedKey, coercedValue);
       return;
     }
 
-    memory.set(normalizedKey, value);
+    memory.set(normalizedKey, coercedValue);
 
-    const boolValue = this.toBoolean(value);
+    const boolValue = this.toBoolean(coercedValue);
     this.ioService.setOutputValue(identifier, boolValue);
   }
 
@@ -360,6 +367,36 @@ export class StructuredTextRuntime {
       return false;
     }
     return normalized.length > 0;
+  }
+
+  private coerceToType(value: StValue, dataType: string): StValue {
+    const upper = dataType.toUpperCase();
+    if (upper.includes('BOOL')) {
+      return this.toBoolean(value);
+    }
+
+    if (/(STRING|CHAR)/.test(upper)) {
+      return String(value);
+    }
+
+    if (upper.includes('REAL') || upper.includes('LREAL')) {
+      return this.toNumber(value);
+    }
+
+    if (/(INT|DINT|SINT|USINT|UINT|UDINT|LINT|ULINT|WORD|DWORD|LWORD|BYTE)/.test(upper)) {
+      const integer = this.toInteger(value);
+      const unsignedTypes = ['USINT', 'UINT', 'UDINT', 'ULINT', 'WORD', 'DWORD', 'LWORD', 'BYTE'];
+      if (unsignedTypes.some(type => upper.includes(type))) {
+        return integer < 0 ? 0 : integer;
+      }
+      return integer;
+    }
+
+    return value;
+  }
+
+  private toInteger(value: StValue): number {
+    return Math.trunc(this.toNumber(value));
   }
 
   private invokeFunction(path: string[], args: StValue[]): StValue | undefined {

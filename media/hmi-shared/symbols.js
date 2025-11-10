@@ -84,6 +84,197 @@
     }
   }
 
+  function update(widget, node, ctx = {}) {
+    if (!widget || !node) { return false; }
+    const label = ctx.label !== undefined ? ctx.label : (widget.label || defaultLabel(widget.type));
+    const isOn = Boolean(ctx.on ?? widget.previewOn ?? false);
+    const value = ctx.value ?? widget.previewValue ?? 0;
+    const style = widget.style || {};
+
+    switch (widget.type) {
+      case 'lamp':
+        return updateLamp(node, { isOn, style });
+      case 'motor':
+        return updateMotor(node, { isOn, style });
+      case 'fan':
+        return updateFan(node, { isOn, style });
+      case 'pump':
+        return updatePump(node, { isOn, style });
+      case 'cylinder':
+        return updateCylinder(node, { isOn, style });
+      case 'valve':
+        return updateValve(node, { isOn, style });
+      case 'button':
+        return updateButton(node, { label, isOn, variant: widget.variant || 'momentary' });
+      case 'switch':
+        return updateSwitch(node, { label, isOn });
+      case 'gauge':
+        return updateGaugeDisplay(node, {
+          value,
+          min: widget.min ?? 0,
+          max: widget.max ?? 100,
+          unit: widget.unit,
+          precision: widget.precision ?? 0,
+          style,
+          label
+        });
+      case 'tank':
+        return updateTankDisplay(node, {
+          value,
+          min: widget.min ?? 0,
+          max: widget.max ?? 100,
+          unit: widget.unit,
+          style,
+          label
+        });
+      case 'numeric':
+        return updateNumericDisplay(node, { value, precision: widget.precision ?? 0, unit: widget.unit });
+      case 'slider':
+        return updateSliderDisplay(node, { value, min: widget.min ?? 0, max: widget.max ?? 100 });
+      case 'text':
+        return updateTextDisplay(node, { text: widget.text || label });
+      default:
+        return false;
+    }
+  }
+
+  function updateLamp(node, { isOn, style }) {
+    node.classList.toggle('is-on', isOn);
+    if (style.onColor) { node.style.setProperty('--lamp-on', style.onColor); }
+    if (style.offColor) { node.style.setProperty('--lamp-off', style.offColor); }
+    return true;
+  }
+
+  function updateMotor(node, { isOn, style }) {
+    node.classList.toggle('is-on', isOn);
+    if (style.color) { node.style.setProperty('--motor-color', style.color); }
+    return true;
+  }
+
+  function updateFan(node, { isOn, style }) {
+    node.classList.toggle('is-on', isOn);
+    if (style.color) { node.style.setProperty('--fan-color', style.color); }
+    return true;
+  }
+
+  function updatePump(node, { isOn, style }) {
+    node.classList.toggle('is-on', isOn);
+    node.classList.toggle('is-flow', isOn);
+    if (style.color) { node.style.setProperty('--pump-color', style.color); }
+    return true;
+  }
+
+  function updateCylinder(node, { isOn, style }) {
+    node.classList.toggle('is-on', isOn);
+    if (style.color) { node.style.setProperty('--cyl-color', style.color); }
+    return true;
+  }
+
+  function updateValve(node, { isOn, style }) {
+    node.classList.toggle('is-on', isOn);
+    if (style.color) { node.style.setProperty('--valve-color', style.color); }
+    return true;
+  }
+
+  function updateButton(node, { label, isOn, variant }) {
+    node.classList.toggle('is-on', Boolean(isOn));
+    const lbl = node.querySelector('.btn-label');
+    if (lbl) {
+      const fallback = variant === 'toggle' ? 'TOGGLE' : 'PUSH';
+      lbl.textContent = label || fallback;
+    }
+    return true;
+  }
+
+  function updateSwitch(node, { label, isOn }) {
+    node.classList.toggle('is-on', Boolean(isOn));
+    const lbl = node.querySelector('.sw-label');
+    if (lbl) { lbl.textContent = label || 'SWITCH'; }
+    return true;
+  }
+
+  function updateGaugeDisplay(node, { value, min, max, unit, precision, style, label }) {
+    const safeMin = Number.isFinite(min) ? min : 0;
+    const safeMax = Number.isFinite(max) && max !== safeMin ? max : safeMin + 100;
+    const clamped = clamp(value, safeMin, safeMax);
+    const sweep = 270;
+    const startAngle = -135;
+    const t = (clamped - safeMin) / (safeMax - safeMin);
+    const angle = startAngle + sweep * t;
+    if (style.arcColor) { node.style.setProperty('--gauge-arc', style.arcColor); }
+    if (style.activeColor) { node.style.setProperty('--gauge-active', style.activeColor); }
+    if (style.needleColor) { node.style.setProperty('--gauge-needle', style.needleColor); }
+
+    const fgArc = node.querySelector('.gauge-arc-active');
+    if (fgArc) {
+      fgArc.setAttribute('d', describeArc(50, 60, 38, startAngle, angle));
+    }
+    const needle = node.querySelector('.gauge-needle');
+    if (needle) {
+      needle.style.transform = `rotate(${angle}deg)`;
+    }
+    const val = node.querySelector('.gauge-value');
+    if (val) {
+      const fmt = precision > 0 ? clamped.toFixed(precision) : Math.round(clamped).toString();
+      val.textContent = unit ? `${fmt} ${unit}` : fmt;
+    }
+    if (label) {
+      const lbl = node.querySelector('.widget-label');
+      if (lbl) { lbl.textContent = label; }
+    }
+    return true;
+  }
+
+  function updateTankDisplay(node, { value, min, max, unit, style, label }) {
+    const safeMin = Number.isFinite(min) ? min : 0;
+    const safeMax = Number.isFinite(max) && max !== safeMin ? max : safeMin + 100;
+    const clamped = clamp(value, safeMin, safeMax);
+    const pct = (clamped - safeMin) / (safeMax - safeMin);
+    if (style.fillColor) { node.style.setProperty('--tank-fill', style.fillColor); }
+    const fill = node.querySelector('.tank-fill');
+    if (fill) { fill.style.height = `${Math.round(pct * 100)}%`; }
+    const valueLabel = node.querySelector('.tank-value');
+    if (valueLabel) {
+      const fmt = Math.round(clamped * 10) / 10;
+      valueLabel.textContent = unit ? `${fmt} ${unit}` : `${fmt}`;
+    }
+    if (label) {
+      const lbl = node.querySelector('.widget-label');
+      if (lbl) { lbl.textContent = label; }
+    }
+    return true;
+  }
+
+  function updateNumericDisplay(node, { value, precision, unit }) {
+    const display = node.querySelector('.numeric-display');
+    if (display) {
+      const num = Number(value);
+      const text = Number.isFinite(num)
+        ? (precision > 0 ? num.toFixed(precision) : Math.round(num).toString())
+        : '--';
+      display.textContent = unit ? `${text} ${unit}` : text;
+    }
+    return true;
+  }
+
+  function updateSliderDisplay(node, { value, min, max }) {
+    const thumb = node.querySelector('.slider-thumb');
+    if (!thumb) { return false; }
+    const pct = (clamp(value, min, max) - min) / (max - min || 1);
+    thumb.style.left = `${pct * 100}%`;
+    return true;
+  }
+
+  function updateTextDisplay(node, { text }) {
+    const inner = node.querySelector('.w-text-inner');
+    if (inner) {
+      inner.textContent = text;
+      return true;
+    }
+    node.textContent = text;
+    return true;
+  }
+
   function defaultLabel(type) {
     if (defaultLabels.has(type)) { return defaultLabels.get(type); }
     if (!type) { return ''; }
@@ -400,5 +591,5 @@
     };
   }
 
-  window.HmiSymbols = { decorate };
+  window.HmiSymbols = { decorate, update };
 })();

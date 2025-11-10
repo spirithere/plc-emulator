@@ -124,16 +124,17 @@ function renderSymbolPreview(rungs, viewportWidth = 0) {
     rung.elements = rung.elements || [];
     rung.branches = rung.branches || [];
     normalizeBranches(rung);
-    preview.appendChild(renderRungPreview(rung, viewportWidth));
+    const highlights = runtime && runtime.running ? computeRungHighlights(rung) : undefined;
+    preview.appendChild(renderRungPreview(rung, viewportWidth, highlights));
   });
 
   return preview;
 }
 
-function renderRungPreview(rung, viewportWidth = 0) {
+function renderRungPreview(rung, viewportWidth = 0, highlights) {
   const columns = getTotalColumns(rung);
   const resolvedViewport = Math.max((viewportWidth || 0) - LEFT_MARGIN * 2, 400);
-  const columnWidth = Math.min(MAX_COLUMN_WIDTH, resolvedViewport / Math.max(columns, 1));
+  const columnWidth = resolvedViewport / Math.max(columns, 1);
   const leftRail = LEFT_MARGIN;
   const rightRail = leftRail + columnWidth * columns;
   const height = 100 + (rung.branches.length || 0) * 70;
@@ -151,14 +152,22 @@ function renderRungPreview(rung, viewportWidth = 0) {
   svg.appendChild(createSvgLine(leftRail, 20, leftRail, height - 20, 'rail'));
   svg.appendChild(createSvgLine(rightRail, 20, rightRail, height - 20, 'rail'));
 
-  drawSeriesPreview(svg, rung.elements, rowY(0), 0, columns, junctionX);
+  drawSeriesPreview(svg, rung.elements, rowY(0), 0, columns, junctionX, highlights?.main);
 
   (rung.branches || []).forEach((branch, branchIndex) => {
     const row = branchIndex + 1;
     const y = rowY(row);
-    svg.appendChild(createSvgLine(junctionX(branch.startColumn), rowY(0), junctionX(branch.startColumn), y, 'wire'));
-    svg.appendChild(createSvgLine(junctionX(branch.endColumn), rowY(0), junctionX(branch.endColumn), y, 'wire'));
-    drawSeriesPreview(svg, branch.elements || [], y, branch.startColumn, branch.endColumn, junctionX);
+    const connectorStart = createSvgLine(junctionX(branch.startColumn), rowY(0), junctionX(branch.startColumn), y, 'wire');
+    const connectorEnd = createSvgLine(junctionX(branch.endColumn), rowY(0), junctionX(branch.endColumn), y, 'wire');
+    if (highlights?.branches?.[branchIndex]?.connectors?.startActive) {
+      connectorStart.classList.add('active');
+    }
+    if (highlights?.branches?.[branchIndex]?.connectors?.endActive) {
+      connectorEnd.classList.add('active');
+    }
+    svg.appendChild(connectorStart);
+    svg.appendChild(connectorEnd);
+    drawSeriesPreview(svg, branch.elements || [], y, branch.startColumn, branch.endColumn, junctionX, highlights?.branches?.[branchIndex]?.series);
   });
 
   return svg;
@@ -194,7 +203,7 @@ function renderRungHeader(rung, index) {
 function renderLadderGrid(rung, viewportWidth = 0) {
   const columns = getTotalColumns(rung);
   const resolvedViewport = Math.max((viewportWidth || 0) - LEFT_MARGIN * 2, 400);
-  const columnWidth = Math.min(MAX_COLUMN_WIDTH, resolvedViewport / Math.max(columns, 1));
+  const columnWidth = resolvedViewport / Math.max(columns, 1);
   const leftRail = LEFT_MARGIN;
   const rightRail = leftRail + columnWidth * columns;
   const height = ROW_HEIGHT * (rung.branches.length + 1) + 120;
@@ -580,7 +589,7 @@ function renderElementToolbar(rung) {
   return wrapper;
 }
 
-function drawSeriesPreview(svg, elements, y, startColumn, endColumn, junctionX) {
+function drawSeriesPreview(svg, elements, y, startColumn, endColumn, junctionX, seriesHighlights) {
   svg.appendChild(createSvgLine(junctionX(startColumn), y, junctionX(endColumn), y, 'wire'));
   if (!elements.length) {
     return;
@@ -592,16 +601,36 @@ function drawSeriesPreview(svg, elements, y, startColumn, endColumn, junctionX) 
   elements.forEach((element, index) => {
     const columnIndex = startColumn + index;
     const center = (junctionX(columnIndex) + junctionX(columnIndex + 1)) / 2;
-    svg.appendChild(createSvgLine(center - symbolPad, y, center + symbolPad, y, 'wire'));
+    const leftSeg = createSvgLine(junctionX(columnIndex), y, center - symbolPad, y, 'wire');
+    if (seriesHighlights?.leftActive?.[index]) {
+      leftSeg.classList.add('active');
+    }
+    svg.appendChild(leftSeg);
+
+    const centerSeg = createSvgLine(center - symbolPad, y, center + symbolPad, y, 'wire');
+    if (seriesHighlights?.symbolActive?.[index]) {
+      centerSeg.classList.add('active');
+    }
+    svg.appendChild(centerSeg);
+
+    const rightSeg = createSvgLine(center + symbolPad, y, junctionX(columnIndex + 1), y, 'wire');
+    if (seriesHighlights?.rightActive?.[index]) {
+      rightSeg.classList.add('active');
+    }
+    svg.appendChild(rightSeg);
+
     if (element?.type === 'coil') {
-      drawCoilSymbol(svg, center, y, element);
+      const energized = Boolean(seriesHighlights?.symbolActive?.[index]);
+      drawCoilSymbol(svg, center, y, element, energized);
     } else {
-      drawContactSymbol(svg, center, y, element);
+      const conducting = Boolean(seriesHighlights?.symbolActive?.[index]);
+      const closed = isContactClosed(element);
+      drawContactSymbol(svg, center, y, element, conducting, undefined, closed);
     }
   });
 }
 
-function drawContactSymbol(svg, x, y, element, active = false, ref) {
+function drawContactSymbol(svg, x, y, element, active = false, ref, closedState) {
   const half = 13;
   const left = createSvgLine(x - half, y - 20, x - half, y + 20, 'symbol');
   left.classList.add('contact');
@@ -632,6 +661,9 @@ function drawContactSymbol(svg, x, y, element, active = false, ref) {
   bridge.classList.add('contact-bridge');
   bridge.dataset.ref = ref;
   bridge.dataset.role = 'contact-bridge';
+  if (typeof closedState === 'boolean') {
+    bridge.classList.toggle('closed', closedState);
+  }
   svg.appendChild(bridge);
   drawLabel(svg, element, x, y + 28);
 }
@@ -844,7 +876,14 @@ function resolveSignal(label, fallback) {
 
 // Toggle only classes based on runtime to avoid full re-render
 function applyRuntimeHighlights() {
-  if (!ladder || !ladder.length || previewMode !== 'edit') {
+  if (!ladder || !ladder.length) {
+    return;
+  }
+  if (previewMode === 'symbol') {
+    render();
+    return;
+  }
+  if (previewMode !== 'edit') {
     return;
   }
   const container = document.getElementById('app');

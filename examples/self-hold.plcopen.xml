@@ -42,6 +42,7 @@ END_PROGRAM"></body>
       <element @_id="rung_0_0" @_type="contact" @_label="X1" @_state="false" @_variant="no" @_addrType="X"></element>
       <element @_id="rung_0_1" @_type="contact" @_label="X5" @_state="false" @_variant="nc" @_addrType="X"></element>
       <element @_id="rung_0_2" @_type="coil" @_label="M0" @_state="false" @_addrType="M"></element>
+      <element @_id="rung_0_el_1762675076114" @_type="contact" @_label="Estop" @_state="false" @_variant="no" @_addrType="X"></element>
       <parallel>
         <branch @_id="rung_branch_0_0" @_startColumn="0" @_endColumn="1">
           <element @_id="0_0_0" @_type="contact" @_label="M0" @_state="false" @_variant="no" @_addrType="M"></element>

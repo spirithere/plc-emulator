@@ -57,6 +57,33 @@ const selfHoldLadder: LadderRung[] = [
   }
 ];
 
+const openCircuitLadder: LadderRung[] = [
+  {
+    id: 'open_0',
+    elements: [
+      { id: 'open_start', label: 'X1', type: 'contact', state: false, variant: 'no' },
+      { id: 'open_stop', label: 'X5', type: 'contact', state: false, variant: 'nc' },
+      { id: 'open_latch', label: 'M0', type: 'coil', state: false },
+      { id: 'open_tail', label: 'Element', type: 'contact', state: false, variant: 'no' }
+    ],
+    branches: [
+      {
+        id: 'open_branch',
+        elements: [{ id: 'open_branch_contact', label: 'M0', type: 'contact', state: false, variant: 'no' }],
+        startColumn: 0,
+        endColumn: 1
+      }
+    ]
+  },
+  {
+    id: 'open_1',
+    elements: [
+      { id: 'open_feedback', label: 'M0', type: 'contact', state: false, variant: 'no' },
+      { id: 'open_output', label: 'Y0', type: 'coil', state: false }
+    ]
+  }
+];
+
 const plcServiceStub = {
   getStructuredTextBlocks: () => [structuredText],
   getLadderRungs: () => ladder
@@ -132,6 +159,24 @@ describe('EmulatorController', () => {
     ioService.setInputValue('X5', true);
     internal.scanCycle();
     outputs = ioService.getState().outputs;
+    expect(outputs.find(output => output.label === 'Y0')?.value).toBe(false);
+  });
+
+  it('requires a complete left and right rail path before energizing a coil', () => {
+    const ioService = new IOSimService();
+    ioService.syncFromProject({ pous: [], ladder: openCircuitLadder });
+    ioService.setInputValue('X1', true);
+    ioService.setInputValue('X5', false);
+
+    const plcStub = createPlcService([], openCircuitLadder);
+    const emulator = new EmulatorController(plcStub, ioService, profileManagerStub);
+    const internal = emulator as unknown as { seedVariables: () => void; scanCycle: () => void; variables: Map<string, unknown> };
+
+    internal.seedVariables();
+    internal.scanCycle();
+
+    expect(internal.variables.get('M0')).toBe(false);
+    const outputs = ioService.getState().outputs;
     expect(outputs.find(output => output.label === 'Y0')?.value).toBe(false);
   });
 

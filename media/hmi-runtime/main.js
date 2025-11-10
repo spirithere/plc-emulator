@@ -2,110 +2,239 @@
   const vscode = acquireVsCodeApi();
   const state = { hmi: null, inputs: [], outputs: [], variables: {} };
   const app = document.getElementById('app');
+  const widgetNodes = new Map();
+  let updateQueued = false;
 
   function send(type, payload) { vscode.postMessage({ type, ...payload }); }
   function currentPage() { return state.hmi?.pages?.[0]; }
 
-  function render() {
+  function widgetKey(widget, index) {
+    return widget?.id || `idx-${index}`;
+  }
+
+  function rebuildScene() {
+    widgetNodes.clear();
     app.innerHTML = '';
+
     if (!state.hmi) {
       app.innerHTML = '<div style="padding:16px;color:#888">No HMI loaded.</div>';
       return;
     }
+
     const page = currentPage();
-    if (!page) return;
-    for (const w of page.widgets) {
-      const node = document.createElement('div');
-      node.className = `widget w-${w.type}`;
-      node.style.left = (w.x || 0) + 'px';
-      node.style.top = (w.y || 0) + 'px';
-      node.style.width = (w.width || 80) + 'px';
-      node.style.height = (w.height || 32) + 'px';
+    if (!page) { return; }
 
-      const boolValue = isBooleanWidget(w.type) ? readBoolean(w) : undefined;
-      const numericValue = readNumber(w);
+    page.widgets.forEach((widget, index) => {
+      const node = createWidgetNode(widget);
+      const key = widgetKey(widget, index);
+      node.dataset.widgetId = key;
+      widgetNodes.set(key, { widget, node });
+      app.appendChild(node);
+    });
 
-      let decorated = false;
-      if (window.HmiSymbols && typeof window.HmiSymbols.decorate === 'function') {
-        decorated = window.HmiSymbols.decorate(w, node, {
-          mode: 'runtime',
-          on: boolValue,
-          value: numericValue,
-          label: w.label
-        });
+    scheduleUpdate(true);
+  }
+
+  function createWidgetNode(widget) {
+    const node = document.createElement('div');
+    node.className = `widget w-${widget.type}`;
+    node.style.left = (widget.x || 0) + 'px';
+    node.style.top = (widget.y || 0) + 'px';
+    node.style.width = (widget.width || 80) + 'px';
+    node.style.height = (widget.height || 32) + 'px';
+
+    const boolValue = isBooleanWidget(widget.type) ? readBoolean(widget) : undefined;
+    const numericValue = readNumber(widget);
+
+    let decorated = false;
+    if (window.HmiSymbols && typeof window.HmiSymbols.decorate === 'function') {
+      decorated = window.HmiSymbols.decorate(widget, node, {
+        mode: 'runtime',
+        on: boolValue,
+        value: numericValue,
+        label: widget.label
+      });
+    }
+
+    if (!decorated) {
+      if (widget.type === 'text') {
+        node.textContent = widget.text || widget.label || 'Text';
+      } else {
+        node.textContent = widget.label || widget.type;
       }
+    }
 
-      if (!decorated) {
-        if (w.type === 'text') {
-          node.textContent = w.text || w.label || 'Text';
-        } else {
-          node.textContent = w.label || w.type;
+    attachInteractions(node, widget, numericValue);
+    return node;
+  }
+
+  function attachInteractions(node, widget, numericValue) {
+    if (widget.type === 'button') {
+      const isToggle = (widget.variant || 'momentary') === 'toggle';
+      const setPressed = pressed => node.classList.toggle('is-pressed', pressed);
+      const ripple = (e) => {
+        const r = document.createElement('span'); r.className = 'btn-ripple';
+        const rect = node.getBoundingClientRect();
+        r.style.left = (e.clientX - rect.left) + 'px';
+        r.style.top = (e.clientY - rect.top) + 'px';
+        node.appendChild(r);
+        setTimeout(() => r.remove(), 450);
+      };
+      node.addEventListener('mousedown', () => { setPressed(true); if (!isToggle) write(widget, true); });
+      node.addEventListener('mouseup', () => { setPressed(false); if (!isToggle) write(widget, false); });
+      node.addEventListener('mouseleave', () => { setPressed(false); if (!isToggle) write(widget, false); });
+      node.addEventListener('click', (e) => { ripple(e); if (isToggle) toggle(widget); });
+    } else if (widget.type === 'switch') {
+      node.addEventListener('click', () => toggle(widget));
+    } else if (widget.type === 'slider') {
+      const rng = document.createElement('input');
+      rng.type = 'range';
+      rng.className = 'slider-control';
+      const min = Number(widget.min ?? 0);
+      const max = Number(widget.max ?? 100);
+      rng.min = String(min);
+      rng.max = String(max);
+      rng.step = String(widget.step ?? 1);
+      const val = clamp(numericValue ?? min, min, max);
+      rng.value = String(val);
+      const thumb = node.querySelector('.slider-thumb');
+      const updateThumb = (value) => {
+        if (!thumb) { return; }
+        const pct = (clamp(value, min, max) - min) / (max - min || 1);
+        thumb.style.left = `${pct * 100}%`;
+      };
+      updateThumb(val);
+      rng.addEventListener('input', () => {
+        const next = Number(rng.value);
+        updateThumb(next);
+        write(widget, next);
+      });
+      node.appendChild(rng);
+    } else if (widget.type === 'numeric') {
+      const inp = document.createElement('input');
+      inp.type = 'number';
+      inp.className = 'numeric-control';
+      if (numericValue !== undefined && numericValue !== null) { inp.value = String(numericValue); }
+      const display = node.querySelector('.numeric-display');
+      const updateDisplay = (val) => { if (display) display.textContent = formatNumericDisplay(widget, val); };
+      updateDisplay(numericValue);
+      inp.addEventListener('input', () => {
+        const next = Number(inp.value);
+        if (!Number.isNaN(next)) {
+          updateDisplay(next);
+          write(widget, next);
         }
-      }
+      });
+      node.appendChild(inp);
+    }
+  }
 
-      if (w.type === 'button') {
-        const isToggle = (w.variant || 'momentary') === 'toggle';
-        const setPressed = pressed => node.classList.toggle('is-pressed', pressed);
-        const ripple = (e) => {
-          const r = document.createElement('span'); r.className = 'btn-ripple';
-          const rect = node.getBoundingClientRect();
-          r.style.left = (e.clientX - rect.left) + 'px';
-          r.style.top = (e.clientY - rect.top) + 'px';
-          node.appendChild(r);
-          setTimeout(() => r.remove(), 450);
-        };
-        node.addEventListener('mousedown', () => { setPressed(true); if (!isToggle) write(w, true); });
-        node.addEventListener('mouseup', () => { setPressed(false); if (!isToggle) write(w, false); });
-        node.addEventListener('mouseleave', () => { setPressed(false); if (!isToggle) write(w, false); });
-        node.addEventListener('click', (e) => { ripple(e); if (isToggle) toggle(w); });
-        if (isToggle) { node.classList.toggle('is-on', !!boolValue); }
-      } else if (w.type === 'switch') {
-        node.classList.toggle('is-on', !!boolValue);
-        node.addEventListener('click', () => toggle(w));
-      } else if (w.type === 'slider') {
-        const rng = document.createElement('input');
-        rng.type = 'range';
-        rng.className = 'slider-control';
-        const min = Number(w.min ?? 0);
-        const max = Number(w.max ?? 100);
-        rng.min = String(min);
-        rng.max = String(max);
-        rng.step = String(w.step ?? 1);
+  function scheduleUpdate(immediate = false) {
+    if (immediate) {
+      updateWidgets();
+      return;
+    }
+    if (updateQueued) { return; }
+    updateQueued = true;
+    requestAnimationFrame(() => {
+      updateQueued = false;
+      updateWidgets();
+    });
+  }
+
+  function updateWidgets() {
+    const page = currentPage();
+    if (!page) { return; }
+    page.widgets.forEach((widget, index) => {
+      const key = widgetKey(widget, index);
+      const entry = widgetNodes.get(key);
+      if (!entry) { return; }
+      applyWidgetState(entry.node, widget);
+    });
+  }
+
+  function applyWidgetState(node, widget) {
+    const boolValue = isBooleanWidget(widget.type) ? readBoolean(widget) : undefined;
+    const numericValue = readNumber(widget);
+    const ctx = {
+      mode: 'runtime',
+      on: boolValue,
+      value: numericValue,
+      label: widget.label
+    };
+
+    let handled = false;
+    if (window.HmiSymbols && typeof window.HmiSymbols.update === 'function') {
+      handled = window.HmiSymbols.update(widget, node, ctx);
+    }
+
+    if (!handled) {
+      applyFallbackState(node, widget, boolValue, numericValue);
+    }
+
+    applyControlState(node, widget, numericValue, boolValue);
+  }
+
+  function applyFallbackState(node, widget, boolValue, numericValue) {
+    if (widget.type === 'text') {
+      const inner = node.querySelector('.w-text-inner');
+      if (inner) {
+        inner.textContent = widget.text || widget.label || 'Text';
+      } else {
+        node.textContent = widget.text || widget.label || 'Text';
+      }
+      return;
+    }
+    if (widget.type === 'button' || widget.type === 'switch' || widget.type === 'lamp') {
+      node.classList.toggle('is-on', !!boolValue);
+      return;
+    }
+    if (widget.type === 'numeric') {
+      const display = node.querySelector('.numeric-display');
+      if (display) { display.textContent = formatNumericDisplay(widget, numericValue); }
+    }
+    if (widget.type === 'slider') {
+      updateSliderVisual(node, widget, numericValue);
+    }
+  }
+
+  function applyControlState(node, widget, numericValue, boolValue) {
+    if (widget.type === 'slider') {
+      const rng = node.querySelector('.slider-control');
+      if (rng && document.activeElement !== rng) {
+        const min = Number(widget.min ?? 0);
+        const max = Number(widget.max ?? 100);
         const val = clamp(numericValue ?? min, min, max);
         rng.value = String(val);
-        const thumb = node.querySelector('.slider-thumb');
-        const updateThumb = (value) => {
-          if (!thumb) { return; }
-          const pct = (clamp(value, min, max) - min) / (max - min || 1);
-          thumb.style.left = `${pct * 100}%`;
-        };
-        updateThumb(val);
-        rng.addEventListener('input', () => {
-          const next = Number(rng.value);
-          updateThumb(next);
-          write(w, next);
-        });
-        node.appendChild(rng);
-      } else if (w.type === 'numeric') {
-        const inp = document.createElement('input');
-        inp.type = 'number';
-        inp.className = 'numeric-control';
-        if (numericValue !== undefined && numericValue !== null) { inp.value = String(numericValue); }
-        const display = node.querySelector('.numeric-display');
-        const updateDisplay = (val) => { if (display) display.textContent = formatNumericDisplay(w, val); };
-        updateDisplay(numericValue);
-        inp.addEventListener('input', () => {
-          const next = Number(inp.value);
-          if (!Number.isNaN(next)) {
-            updateDisplay(next);
-            write(w, next);
-          }
-        });
-        node.appendChild(inp);
       }
-
-      app.appendChild(node);
+      updateSliderVisual(node, widget, numericValue);
+    } else if (widget.type === 'numeric') {
+      const inp = node.querySelector('.numeric-control');
+      if (inp && document.activeElement !== inp) {
+        if (numericValue === undefined || numericValue === null || Number.isNaN(numericValue)) {
+          inp.value = '';
+        } else {
+          inp.value = String(numericValue);
+        }
+      }
+      const display = node.querySelector('.numeric-display');
+      if (display) { display.textContent = formatNumericDisplay(widget, numericValue); }
+    } else if (widget.type === 'button') {
+      const isToggle = (widget.variant || 'momentary') === 'toggle';
+      if (isToggle) { node.classList.toggle('is-on', !!boolValue); }
+    } else if (widget.type === 'switch') {
+      node.classList.toggle('is-on', !!boolValue);
     }
+  }
+
+  function updateSliderVisual(node, widget, numericValue) {
+    const thumb = node.querySelector('.slider-thumb');
+    if (!thumb) { return; }
+    const min = Number(widget.min ?? 0);
+    const max = Number(widget.max ?? 100);
+    const val = clamp(numericValue ?? min, min, max);
+    const pct = (val - min) / (max - min || 1);
+    thumb.style.left = `${pct * 100}%`;
   }
 
   function readBoolean(widget) {
@@ -165,12 +294,20 @@
     const msg = ev.data;
     switch (msg?.type) {
       case 'loaded':
-        state.hmi = msg.hmi; render(); break;
+        state.hmi = msg.hmi;
+        rebuildScene();
+        break;
       case 'ioState':
-        state.inputs = msg.inputs || []; state.outputs = msg.outputs || []; render(); break;
+        state.inputs = msg.inputs || [];
+        state.outputs = msg.outputs || [];
+        scheduleUpdate();
+        break;
       case 'runtimeState':
-        state.variables = msg.variables || {}; render(); break;
-      default: break;
+        state.variables = msg.variables || {};
+        scheduleUpdate();
+        break;
+      default:
+        break;
     }
   });
 

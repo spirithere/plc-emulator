@@ -62,4 +62,38 @@ describe('StructuredTextRuntime diagnostics', () => {
     expect(runtimeEvent?.diagnostics[0]?.source).toBe('runtime');
     expect(runtimeEvent?.diagnostics[0]?.message).toContain('Unsupported function');
   });
+
+  it('coerces assignments to declared data types', () => {
+    const runtime = new StructuredTextRuntime(new IOSimService());
+    const block: StructuredTextBlock = {
+      name: 'TypeProgram',
+      body: [
+        'PROGRAM TypeProgram',
+        '  VAR',
+        '    Flag : BOOL := FALSE;',
+        '    Count : INT := 0;',
+        '    Text : STRING := "";',
+        '    Unsigned : UINT := 0;',
+        '    RealValue : REAL := 0.0;',
+        '  END_VAR',
+        '  Flag := 1;',
+        '  Count := TRUE;',
+        '  Text := 123;',
+        '  Unsigned := -5;',
+        '  RealValue := "3.5";',
+        'END_PROGRAM'
+      ].join('\n')
+    };
+
+    const memory = new Map<string, number | boolean | string>();
+
+    runtime.seed([block], memory);
+    runtime.execute([block], memory);
+
+    expect(memory.get('Flag')).toBe(true);
+    expect(memory.get('Count')).toBe(1);
+    expect(memory.get('Text')).toBe('123');
+    expect(memory.get('Unsigned')).toBe(0);
+    expect(memory.get('RealValue')).toBeCloseTo(3.5, 5);
+  });
 });

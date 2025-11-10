@@ -72,6 +72,36 @@ body {
   fill: none;
 }
 
+.symbol-preview line.wire.active {
+  stroke: #ffd86b;
+  stroke-width: 3;
+  filter: drop-shadow(0 0 4px rgba(255, 216, 107, 0.7)) drop-shadow(0 0 8px rgba(255, 216, 107, 0.4));
+}
+
+.symbol-preview line.symbol.active,
+.symbol-preview path.symbol.active {
+  stroke: #8cfbff;
+  stroke-width: 3;
+}
+
+.symbol-preview line.contact-bridge {
+  stroke: #9fe8ff;
+  stroke-width: 2;
+  opacity: 0;
+  filter: none;
+}
+
+.symbol-preview line.contact-bridge.closed {
+  opacity: 1;
+  filter: drop-shadow(0 0 5px rgba(159, 232, 255, 0.9)) drop-shadow(0 0 10px rgba(159, 232, 255, 0.6));
+}
+
+.symbol-preview .symbol.coil.energized {
+  stroke: #a7b7ff;
+  stroke-width: 3;
+  filter: drop-shadow(0 0 6px rgba(167, 183, 255, 0.9)) drop-shadow(0 0 12px rgba(167, 183, 255, 0.6));
+}
+
 .symbol-preview .symbol-label {
   fill: #e1e7ff;
 }

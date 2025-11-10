@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { PLCopenService } from '../services/plcopenService';
-import { LadderElement, LadderRung, StructuredTextBlock } from '../types';
+import { LadderBranch, LadderElement, LadderRung, StructuredTextBlock } from '../types';
 import { IOSimService } from '../io/ioService';
 import { ProfileManager } from './profileManager';
 import { StructuredTextDiagnosticEvent, StructuredTextRuntime } from './st/runtime';
@@ -98,20 +98,38 @@ export class EmulatorController {
     const startPower: boolean[] = Array(cols + 1).fill(false);
     startPower[0] = true;
 
-    const byStart = new Map<number, LadderRung['branches']>();
-    rung.branches?.forEach(br => {
-      const list = byStart.get(br.startColumn) ?? [];
-      list.push(br);
-      byStart.set(br.startColumn, list);
+    const branchData: BranchRuntimeData[] = (rung.branches ?? []).map(branch => {
+      const conductive = branch.elements.map(el => this.isElementConductive(el));
+      return {
+        branch,
+        conductive,
+        fullyConductive: conductive.every(Boolean),
+        suffixReach: []
+      };
+    });
+
+    const branchesByStart = new Map<number, BranchRuntimeData[]>();
+    branchData.forEach(data => {
+      const startColumn = this.clampColumn(data.branch.startColumn, cols, 0);
+      const list = branchesByStart.get(startColumn) ?? [];
+      list.push(data);
+      branchesByStart.set(startColumn, list);
+    });
+
+    const elementConductive = elements.map(el => this.isElementConductive(el));
+    const rightReach = this.computeRightReach(elements, elementConductive, branchesByStart, cols);
+
+    branchData.forEach(data => {
+      data.suffixReach = this.computeBranchSuffixReach(data.branch, data.conductive, rightReach, cols);
     });
 
     for (let i = 0; i < cols; i += 1) {
       const incoming = startPower[i];
 
-      const branches = byStart.get(i) ?? [];
+      const branches = branchesByStart.get(i) ?? [];
       for (const br of branches) {
-        const branchOut = this.executeSeries(br.elements, incoming);
-        const endIdx = Math.min(Math.max(br.endColumn, i + 1), cols);
+        const branchOut = this.executeSeries(br.branch.elements, incoming, br.suffixReach);
+        const endIdx = this.clampColumn(br.branch.endColumn, cols, i + 1);
         startPower[endIdx] = startPower[endIdx] || branchOut;
       }
 
@@ -122,8 +140,10 @@ export class EmulatorController {
         const closed = el.variant === 'nc' ? !raw : raw;
         next = incoming && closed;
       } else if (el.type === 'coil') {
-        this.variables.set(el.label, incoming);
-        this.ioService.setOutputValue(el.label, incoming);
+        const canReachRight = rightReach[i + 1] ?? false;
+        const energized = incoming && canReachRight;
+        this.variables.set(el.label, energized);
+        this.ioService.setOutputValue(el.label, energized);
         next = incoming; // power rail continues past coils
       }
 
@@ -131,19 +151,82 @@ export class EmulatorController {
     }
   }
 
-  private executeSeries(elements: LadderElement[], initialPower: boolean): boolean {
+  private executeSeries(elements: LadderElement[], initialPower: boolean, suffixReach?: boolean[]): boolean {
     let powerRail = initialPower;
-    elements.forEach(element => {
+    elements.forEach((element, idx) => {
       if (element.type === 'contact') {
         const rawSignal = this.resolveSignal(element.label, element.state ?? true, (element as any).addrType);
         const isClosed = element.variant === 'nc' ? !rawSignal : rawSignal;
         powerRail = powerRail && isClosed;
       } else if (element.type === 'coil') {
-        this.variables.set(element.label, powerRail);
-        this.ioService.setOutputValue(element.label, powerRail);
+        const canReachRight = suffixReach ? suffixReach[idx + 1] : true;
+        const energized = powerRail && canReachRight;
+        this.variables.set(element.label, energized);
+        this.ioService.setOutputValue(element.label, energized);
       }
     });
     return powerRail;
+  }
+
+  private isElementConductive(element: LadderElement): boolean {
+    if (element.type === 'coil') {
+      return true;
+    }
+    const raw = this.resolveSignal(element.label, element.state ?? true, element.addrType);
+    return element.variant === 'nc' ? !raw : raw;
+  }
+
+  private computeRightReach(
+    elements: LadderElement[],
+    elementConductive: boolean[],
+    branchesByStart: Map<number, BranchRuntimeData[]>,
+    cols: number
+  ): boolean[] {
+    const rightReach = Array(cols + 1).fill(false);
+    rightReach[cols] = true;
+
+    for (let i = cols - 1; i >= 0; i -= 1) {
+      const el = elements[i];
+      const conductive = el.type === 'coil' ? true : elementConductive[i];
+      let canReach = conductive && rightReach[i + 1];
+
+      const branches = branchesByStart.get(i) ?? [];
+      for (const br of branches) {
+        const endColumn = this.clampColumn(br.branch.endColumn, cols, i + 1);
+        if (br.fullyConductive && rightReach[endColumn]) {
+          canReach = true;
+          break;
+        }
+      }
+
+      rightReach[i] = canReach;
+    }
+
+    return rightReach;
+  }
+
+  private computeBranchSuffixReach(
+    branch: LadderBranch,
+    conductive: boolean[],
+    rightReach: boolean[],
+    cols: number
+  ): boolean[] {
+    const len = branch.elements.length;
+    const suffix = Array(len + 1).fill(false);
+    const endColumn = this.clampColumn(branch.endColumn, cols, 0);
+    suffix[len] = rightReach[endColumn];
+
+    for (let idx = len - 1; idx >= 0; idx -= 1) {
+      suffix[idx] = conductive[idx] && suffix[idx + 1];
+    }
+
+    return suffix;
+  }
+
+  private clampColumn(column: number, cols: number, min = 0): number {
+    const lower = Math.max(0, Math.min(min, cols));
+    const value = Number.isFinite(column) ? column : 0;
+    return Math.min(Math.max(value, lower), cols);
   }
 
   private resolveSignal(label: string, fallback: boolean, addrType?: 'X'|'M'|'Y'): boolean {
@@ -181,3 +264,10 @@ export class EmulatorController {
     return undefined;
   }
 }
+
+type BranchRuntimeData = {
+  branch: LadderBranch;
+  conductive: boolean[];
+  fullyConductive: boolean;
+  suffixReach: boolean[];
+};
