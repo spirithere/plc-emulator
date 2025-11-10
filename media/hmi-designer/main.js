@@ -61,11 +61,20 @@
   function renderProps() {
     const props = el('#props-content') || el('#props');
     if (!state.hmi) { if (props) props.innerHTML = ''; return; }
+    const focusState = rememberPropFocus(props);
     const page = currentPage();
     const selectedIds = Array.from(state.selected);
-    if (selectedIds.length !== 1) { props.innerHTML = '<div style="opacity:.6">ウィジェットを1つ選択してください</div>'; return; }
+    if (selectedIds.length !== 1) {
+      props.innerHTML = '<div style="opacity:.6">ウィジェットを1つ選択してください</div>';
+      restorePropFocus(props, focusState);
+      return;
+    }
     const w = page?.widgets?.find(x => x.id === selectedIds[0]);
-    if (!w) { props.innerHTML = '<div style="opacity:.6">選択されていません</div>'; return; }
+    if (!w) {
+      props.innerHTML = '<div style="opacity:.6">選択されていません</div>';
+      restorePropFocus(props, focusState);
+      return;
+    }
     props.innerHTML = '';
     props.appendChild(row('ID', readOnly(w.id)));
     props.appendChild(row('Type', readOnly(w.type)));
@@ -184,6 +193,7 @@
     del.textContent = 'Delete widget';
     del.addEventListener('click', () => deleteWidget(w.id));
     props.appendChild(del);
+    restorePropFocus(props, focusState);
   }
 
   function row(label, control) {
@@ -192,8 +202,42 @@
     const l = document.createElement('label');
     l.textContent = label;
     div.appendChild(l);
+    if (control?.dataset) {
+      control.dataset.propKey = label;
+    }
     div.appendChild(control);
     return div;
+  }
+  function rememberPropFocus(container) {
+    if (!container) return null;
+    const active = document.activeElement;
+    if (!active || !container.contains(active)) return null;
+    const key = active.dataset?.propKey;
+    if (!key) return null;
+    const selectionSupported = typeof active.selectionStart === 'number' && typeof active.selectionEnd === 'number';
+    return {
+      key,
+      selection: selectionSupported ? { start: active.selectionStart, end: active.selectionEnd } : null
+    };
+  }
+  function restorePropFocus(container, state) {
+    if (!container || !state || !state.key) return;
+    const escapedKey = escapeAttrValue(state.key);
+    const target = container.querySelector(`[data-prop-key="${escapedKey}"]`);
+    if (!target) return;
+    target.focus();
+    if (state.selection && typeof target.setSelectionRange === 'function') {
+      const valueLength = typeof target.value === 'string' ? target.value.length : 0;
+      const start = Math.max(0, Math.min(state.selection.start, valueLength));
+      const end = Math.max(0, Math.min(state.selection.end, valueLength));
+      target.setSelectionRange(start, end);
+    }
+  }
+  function escapeAttrValue(value) {
+    if (window.CSS && typeof window.CSS.escape === 'function') {
+      return window.CSS.escape(value);
+    }
+    return String(value).replace(/"/g, '\\"');
   }
   function input(val, on) {
     const i = document.createElement('input');

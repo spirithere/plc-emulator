@@ -148,17 +148,27 @@ function renderRungPreview(rung, viewportWidth = 0, highlights) {
   svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
   svg.style.width = `${width}px`;
   svg.style.height = 'auto';
+  svg.dataset.role = 'symbol-rung';
+  svg.dataset.rung = rung.id || '';
 
   svg.appendChild(createSvgLine(leftRail, 20, leftRail, height - 20, 'rail'));
   svg.appendChild(createSvgLine(rightRail, 20, rightRail, height - 20, 'rail'));
 
-  drawSeriesPreview(svg, rung.elements, rowY(0), 0, columns, junctionX, highlights?.main);
+  drawSeriesPreview(svg, rung.elements, rowY(0), 0, columns, junctionX, highlights?.main, rung.id, 0);
 
   (rung.branches || []).forEach((branch, branchIndex) => {
     const row = branchIndex + 1;
     const y = rowY(row);
     const connectorStart = createSvgLine(junctionX(branch.startColumn), rowY(0), junctionX(branch.startColumn), y, 'wire');
+    connectorStart.dataset.role = 'branch-connector';
+    connectorStart.dataset.rung = rung.id || '';
+    connectorStart.dataset.row = String(row);
+    connectorStart.dataset.side = 'start';
     const connectorEnd = createSvgLine(junctionX(branch.endColumn), rowY(0), junctionX(branch.endColumn), y, 'wire');
+    connectorEnd.dataset.role = 'branch-connector';
+    connectorEnd.dataset.rung = rung.id || '';
+    connectorEnd.dataset.row = String(row);
+    connectorEnd.dataset.side = 'end';
     if (highlights?.branches?.[branchIndex]?.connectors?.startActive) {
       connectorStart.classList.add('active');
     }
@@ -167,7 +177,17 @@ function renderRungPreview(rung, viewportWidth = 0, highlights) {
     }
     svg.appendChild(connectorStart);
     svg.appendChild(connectorEnd);
-    drawSeriesPreview(svg, branch.elements || [], y, branch.startColumn, branch.endColumn, junctionX, highlights?.branches?.[branchIndex]?.series);
+    drawSeriesPreview(
+      svg,
+      branch.elements || [],
+      y,
+      branch.startColumn,
+      branch.endColumn,
+      junctionX,
+      highlights?.branches?.[branchIndex]?.series,
+      rung.id,
+      row
+    );
   });
 
   return svg;
@@ -591,7 +611,7 @@ function renderElementToolbar(rung) {
   return wrapper;
 }
 
-function drawSeriesPreview(svg, elements, y, startColumn, endColumn, junctionX, seriesHighlights) {
+function drawSeriesPreview(svg, elements, y, startColumn, endColumn, junctionX, seriesHighlights, rungId, rowIndex = 0) {
   svg.appendChild(createSvgLine(junctionX(startColumn), y, junctionX(endColumn), y, 'wire'));
   if (!elements.length) {
     return;
@@ -603,19 +623,32 @@ function drawSeriesPreview(svg, elements, y, startColumn, endColumn, junctionX, 
   elements.forEach((element, index) => {
     const columnIndex = startColumn + index;
     const center = (junctionX(columnIndex) + junctionX(columnIndex + 1)) / 2;
+    const ref = rungId == null ? undefined : makeRef(rungId, rowIndex, index);
     const leftSeg = createSvgLine(junctionX(columnIndex), y, center - symbolPad, y, 'wire');
+    if (ref) {
+      leftSeg.dataset.ref = ref;
+      leftSeg.dataset.segment = 'left';
+    }
     if (seriesHighlights?.leftActive?.[index]) {
       leftSeg.classList.add('active');
     }
     svg.appendChild(leftSeg);
 
     const centerSeg = createSvgLine(center - symbolPad, y, center + symbolPad, y, 'wire');
+    if (ref) {
+      centerSeg.dataset.ref = ref;
+      centerSeg.dataset.segment = 'symbol';
+    }
     if (seriesHighlights?.symbolActive?.[index]) {
       centerSeg.classList.add('active');
     }
     svg.appendChild(centerSeg);
 
     const rightSeg = createSvgLine(center + symbolPad, y, junctionX(columnIndex + 1), y, 'wire');
+    if (ref) {
+      rightSeg.dataset.ref = ref;
+      rightSeg.dataset.segment = 'right';
+    }
     if (seriesHighlights?.rightActive?.[index]) {
       rightSeg.classList.add('active');
     }
@@ -623,11 +656,11 @@ function drawSeriesPreview(svg, elements, y, startColumn, endColumn, junctionX, 
 
     if (element?.type === 'coil') {
       const energized = Boolean(seriesHighlights?.symbolActive?.[index]);
-      drawCoilSymbol(svg, center, y, element, energized);
+      drawCoilSymbol(svg, center, y, element, energized, ref);
     } else {
       const conducting = Boolean(seriesHighlights?.symbolActive?.[index]);
       const closed = isContactClosed(element);
-      drawContactSymbol(svg, center, y, element, conducting, undefined, closed);
+      drawContactSymbol(svg, center, y, element, conducting, ref, closed);
     }
   });
 }
@@ -636,11 +669,15 @@ function drawContactSymbol(svg, x, y, element, active = false, ref, closedState)
   const half = 13;
   const left = createSvgLine(x - half, y - 20, x - half, y + 20, 'symbol');
   left.classList.add('contact');
-  left.dataset.ref = ref;
+  if (ref != null) {
+    left.dataset.ref = ref;
+  }
   left.dataset.role = 'contact-vert';
   const right = createSvgLine(x + half, y - 20, x + half, y + 20, 'symbol');
   right.classList.add('contact');
-  right.dataset.ref = ref;
+  if (ref != null) {
+    right.dataset.ref = ref;
+  }
   right.dataset.role = 'contact-vert';
   if (active) {
     left.classList.add('active');
@@ -653,7 +690,9 @@ function drawContactSymbol(svg, x, y, element, active = false, ref, closedState)
   if ((element?.variant ?? 'no') === 'nc') {
     const diag = createSvgLine(x - half, y - 20, x + half, y + 20, 'symbol');
     diag.classList.add('contact');
-    diag.dataset.ref = ref;
+    if (ref != null) {
+      diag.dataset.ref = ref;
+    }
     diag.dataset.role = 'contact-diag';
     if (active) {
       diag.classList.add('active');
@@ -664,7 +703,9 @@ function drawContactSymbol(svg, x, y, element, active = false, ref, closedState)
   // bridge line to show closed state distinctly
   const bridge = createSvgLine(x - half, y, x + half, y, 'symbol');
   bridge.classList.add('contact-bridge');
-  bridge.dataset.ref = ref;
+  if (ref != null) {
+    bridge.dataset.ref = ref;
+  }
   bridge.dataset.role = 'contact-bridge';
   applyContactState(bridge, closedState);
   svg.appendChild(bridge);
@@ -685,14 +726,18 @@ function drawCoilSymbol(svg, x, y, element, active = false, ref) {
   const leftPath = document.createElementNS(SVG_NS, 'path');
   leftPath.setAttribute('d', `M ${x - radius} ${y - 20} C ${x - radius / 2} ${y - 20}, ${x - radius / 2} ${y + 20}, ${x - radius} ${y + 20}`);
   leftPath.setAttribute('class', 'symbol coil');
-  leftPath.dataset.ref = ref;
+  if (ref != null) {
+    leftPath.dataset.ref = ref;
+  }
   leftPath.dataset.role = 'coil';
   applyStrokeStyle(leftPath, 'symbol');
 
   const rightPath = document.createElementNS(SVG_NS, 'path');
   rightPath.setAttribute('d', `M ${x + radius} ${y - 20} C ${x + radius / 2} ${y - 20}, ${x + radius / 2} ${y + 20}, ${x + radius} ${y + 20}`);
   rightPath.setAttribute('class', 'symbol coil');
-  rightPath.dataset.ref = ref;
+  if (ref != null) {
+    rightPath.dataset.ref = ref;
+  }
   rightPath.dataset.role = 'coil';
   applyStrokeStyle(rightPath, 'symbol');
 
@@ -991,35 +1036,51 @@ function applyRuntimeHighlights() {
   if (!ladder || !ladder.length) {
     return;
   }
-  if (previewMode === 'symbol') {
-    render();
+  const container = document.getElementById('app');
+  if (!container) {
     return;
   }
+
+  if (previewMode === 'symbol') {
+    const previewRoot = container.querySelector('.symbol-preview');
+    if (!previewRoot) {
+      return;
+    }
+    ladder.forEach(rung => {
+      const svg = previewRoot.querySelector(`svg[data-role="symbol-rung"][data-rung="${esc(rung.id)}"]`);
+      applyHighlightsToRung(svg, rung);
+    });
+    return;
+  }
+
   if (previewMode !== 'edit') {
     return;
   }
-  const container = document.getElementById('app');
-  if (!container) return;
 
   ladder.forEach(rung => {
     const canvas = container.querySelector(`.ladder-grid[data-rung="${esc(rung.id)}"]`);
-    if (!canvas) {
-      return;
-    }
-    const highlights = runtime && runtime.running ? computeRungHighlights(rung) : undefined;
-    // main row
-    updateSeriesHighlights(canvas, rung, 0, rung.elements, highlights?.main);
-    // branches
-    (rung.branches || []).forEach((br, bIndex) => {
-      const row = bIndex + 1;
-      const brHl = highlights?.branches?.[bIndex];
-      updateSeriesHighlights(canvas, rung, row, br.elements || [], brHl?.series);
-      // connectors
-      const startConn = canvas.querySelector(`[data-role="branch-connector"][data-rung="${esc(rung.id)}"][data-row="${row}"][data-side="start"]`);
-      const endConn = canvas.querySelector(`[data-role="branch-connector"][data-rung="${esc(rung.id)}"][data-row="${row}"][data-side="end"]`);
-      toggleActive(startConn, !!brHl?.connectors?.startActive);
-      toggleActive(endConn, !!brHl?.connectors?.endActive);
-    });
+    applyHighlightsToRung(canvas, rung);
+  });
+}
+
+function applyHighlightsToRung(root, rung) {
+  if (!root) {
+    return;
+  }
+  const highlights = runtime && runtime.running ? computeRungHighlights(rung) : undefined;
+  updateSeriesHighlights(root, rung, 0, rung.elements, highlights?.main);
+  (rung.branches || []).forEach((br, bIndex) => {
+    const row = bIndex + 1;
+    const brHl = highlights?.branches?.[bIndex];
+    updateSeriesHighlights(root, rung, row, br.elements || [], brHl?.series);
+    const startConn = root.querySelector(
+      `[data-role="branch-connector"][data-rung="${esc(rung.id)}"][data-row="${row}"][data-side="start"]`
+    );
+    const endConn = root.querySelector(
+      `[data-role="branch-connector"][data-rung="${esc(rung.id)}"][data-row="${row}"][data-side="end"]`
+    );
+    toggleActive(startConn, !!brHl?.connectors?.startActive);
+    toggleActive(endConn, !!brHl?.connectors?.endActive);
   });
 }
 
@@ -1028,8 +1089,10 @@ function updateSeriesHighlights(canvas, rung, rowIndex, elements, seriesHighligh
     const ref = makeRef(rung.id, rowIndex, i);
     const left = canvas.querySelector(`[data-ref="${esc(ref)}"][data-segment="left"]`);
     const right = canvas.querySelector(`[data-ref="${esc(ref)}"][data-segment="right"]`);
+    const center = canvas.querySelector(`[data-ref="${esc(ref)}"][data-segment="symbol"]`);
     toggleActive(left, !!seriesHighlights?.leftActive?.[i]);
     toggleActive(right, !!seriesHighlights?.rightActive?.[i]);
+    toggleActive(center, !!seriesHighlights?.symbolActive?.[i]);
 
     const el = elements[i];
     if (el?.type === 'contact') {
