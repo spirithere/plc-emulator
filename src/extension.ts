@@ -2,7 +2,8 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { PLCopenService } from './services/plcopenService';
 import { LadderPanelManager } from './ladder/ladderPanel';
-import { EmulatorController } from './runtime/emulator';
+import { EmulatorController, RuntimeController } from './runtime/emulator';
+import { ExternalRuntimeController } from './runtime/externalController';
 import { IOSimService } from './io/ioService';
 import { IOPanelManager } from './io/ioPanel';
 import { ProfileManager } from './runtime/profileManager';
@@ -13,13 +14,14 @@ import { HmiService } from './hmi/hmiService';
 import { HmiDesignerPanelManager } from './hmi/hmiDesignerPanel';
 import { HmiRuntimePanelManager } from './hmi/hmiRuntimePanel';
 import { StructuredTextDiagnosticEvent } from './runtime/st/runtime';
+import { RuntimeHostAdapter } from './runtime/host/extensionAdapter';
 // Quick actions are now exposed as view title toolbar items via menus; no webview needed.
 
 let plcService: PLCopenService;
 let ladderManager: LadderPanelManager;
 let ioService: IOSimService;
 let ioPanel: IOPanelManager;
-let emulator: EmulatorController;
+let emulator: RuntimeController;
 let profileManager: ProfileManager;
 let pouTreeProvider: POUTreeProvider;
 let runtimeViewProvider: RuntimeViewProvider;
@@ -28,14 +30,21 @@ let hmiLauncherViewProvider: HmiLauncherViewProvider;
 let hmiService: HmiService;
 let hmiDesigner: HmiDesignerPanelManager;
 let hmiRuntime: HmiRuntimePanelManager;
+let hostAdapter: RuntimeHostAdapter | undefined;
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   plcService = new PLCopenService();
   ioService = new IOSimService();
   ioPanel = new IOPanelManager(context.extensionUri, ioService);
   profileManager = new ProfileManager(context);
-  emulator = new EmulatorController(plcService, ioService, profileManager);
-  ladderManager = new LadderPanelManager(context.extensionUri, plcService, emulator);
+  const runtimeMode = vscode.workspace.getConfiguration('plcEmu').get<'embedded' | 'external'>('runtimeMode', 'embedded');
+  if (runtimeMode === 'external') {
+    hostAdapter = new RuntimeHostAdapter(context);
+    emulator = new ExternalRuntimeController(plcService, ioService, hostAdapter);
+  } else {
+    emulator = new EmulatorController(plcService, ioService, profileManager);
+  }
+  ladderManager = new LadderPanelManager(context.extensionUri, plcService, emulator, ioService);
   pouTreeProvider = new POUTreeProvider(plcService);
   runtimeViewProvider = new RuntimeViewProvider(context.extensionUri, emulator, ioService, profileManager);
   hmiLauncherViewProvider = new HmiLauncherViewProvider(context.extensionUri);
@@ -57,6 +66,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push(
     plcService,
     stDiagnostics,
+    emulator,
     emulator.onStructuredTextDiagnostics(event => {
       void handleStructuredTextDiagnostics(event, stDiagnostics, plcService);
     }),
@@ -87,6 +97,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.window.registerWebviewViewProvider('plcRuntimeControls', runtimeViewProvider),
     vscode.window.registerWebviewViewProvider('plcHmiView', hmiLauncherViewProvider)
   );
+  if (hostAdapter) {
+    context.subscriptions.push(hostAdapter);
+  }
 
   // initialize and maintain the running state context key
   await setRunningContext(emulator.isRunning());

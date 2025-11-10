@@ -235,6 +235,15 @@
           ],
           "description": "Dialect profile that controls vendor-specific behavior (prototype)."
         },
+        "plcEmu.runtimeMode": {
+          "type": "string",
+          "default": "embedded",
+          "enum": [
+            "embedded",
+            "external"
+          ],
+          "description": "Choose between the in-process emulator and the external runtime host service."
+        },
         "plcEmu.hmiFile": {
           "type": "string",
           "default": ".plc/hmi.json",
@@ -274,7 +283,9 @@
     "watch": "tsc -watch -p ./",
     "vscode:prepublish": "npm run compile",
     "package": "npm run compile && vsce package",
-    "test": "vitest run"
+    "test": "vitest run",
+    "host": "npm run compile && node ./out/runtime/host/cli.js",
+    "plcrun": "node ./out/runtime/host/client.js"
   },
   "devDependencies": {
     "@types/node": "^20.12.12",

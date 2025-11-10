@@ -1,7 +1,8 @@
 import * as vscode from 'vscode';
 import { PLCopenService } from '../services/plcopenService';
 import { LadderRung } from '../types';
-import { EmulatorController } from '../runtime/emulator';
+import { RuntimeController } from '../runtime/emulator';
+import { IOSimService, IOStateSnapshot } from '../io/ioService';
 
 export class LadderPanelManager {
   private panel: vscode.WebviewPanel | undefined;
@@ -9,11 +10,13 @@ export class LadderPanelManager {
     running: false,
     variables: {}
   };
+  private latestIo: IOStateSnapshot = { inputs: [], outputs: [] };
 
   constructor(
     private readonly contextUri: vscode.Uri,
     private readonly plcService: PLCopenService,
-    private readonly emulator: EmulatorController
+    private readonly emulator: RuntimeController,
+    private readonly ioService: IOSimService
   ) {
     this.plcService.onDidChangeModel(() => this.postModel());
     this.emulator.onDidUpdateState(snapshot => {
@@ -22,6 +25,11 @@ export class LadderPanelManager {
     });
     this.emulator.onDidChangeRunState(running => {
       this.latestRuntime.running = running;
+      this.postRuntime();
+    });
+    this.latestIo = this.ioService.getState();
+    this.ioService.onDidChangeState(state => {
+      this.latestIo = state;
       this.postRuntime();
     });
   }
@@ -55,6 +63,7 @@ export class LadderPanelManager {
     });
 
     this.latestRuntime.running = this.emulator.isRunning();
+    this.latestIo = this.ioService.getState();
     this.postModel();
     this.postRuntime();
   }
@@ -81,7 +90,11 @@ export class LadderPanelManager {
     }
     this.panel.webview.postMessage({
       type: 'runtime',
-      payload: this.latestRuntime
+      payload: {
+        running: this.latestRuntime.running,
+        variables: this.latestRuntime.variables,
+        io: this.latestIo
+      }
     });
   }
 

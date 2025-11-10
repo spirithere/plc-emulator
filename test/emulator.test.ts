@@ -162,6 +162,35 @@ describe('EmulatorController', () => {
     expect(outputs.find(output => output.label === 'Y0')?.value).toBe(false);
   });
 
+  it('keeps IO inputs and runtime state in sync so the last writer wins', () => {
+    const ioService = new IOSimService();
+    ioService.syncFromProject({ pous: [], ladder: selfHoldLadder });
+    const plcStub = createPlcService([], selfHoldLadder);
+    const emulator = new EmulatorController(plcStub, ioService, profileManagerStub);
+    const internal = emulator as unknown as {
+      seedVariables: () => void;
+      scanCycle: () => void;
+      variables: Map<string, unknown>;
+    };
+
+    internal.seedVariables();
+    internal.scanCycle();
+
+    emulator.writeVariable('X1', true);
+    internal.scanCycle();
+
+    let x1Input = ioService.getState().inputs.find(input => input.id === 'X1');
+    expect(x1Input?.value).toBe(true);
+    expect(internal.variables.get('X1')).toBe(true);
+
+    ioService.setInputValue('X1', false);
+    internal.scanCycle();
+
+    x1Input = ioService.getState().inputs.find(input => input.id === 'X1');
+    expect(x1Input?.value).toBe(false);
+    expect(internal.variables.get('X1')).toBe(false);
+  });
+
   it('requires a complete left and right rail path before energizing a coil', () => {
     const ioService = new IOSimService();
     ioService.syncFromProject({ pous: [], ladder: openCircuitLadder });

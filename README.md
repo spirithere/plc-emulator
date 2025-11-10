@@ -14,6 +14,10 @@ npm run compile
 npm test
 ```
 
+### External Runtime Host (experimental)
+
+Set `"plcEmu.runtimeMode": "external"` in your VS Code settings to run the IEC scan cycle in a standalone Runtime Host process. The extension will spawn the host automatically, but you can also run it manually via `npm run host`. The host exposes both stdio and a TCP socket (default `127.0.0.1:8123`), so VS Code and external agents can connect simultaneously. For quick ad‑hoc commands use `npm run plcrun -- <command>` (e.g., `npm run plcrun -- ping`). See `docs/runtime-host-cli.md` for the JSON-RPC protocol and automation tips.
+
 Open the folder in VS Code and press `F5` to launch the extension host. Once running:
 
 1. Run **PLC Emulator: Open PLCopen Project** to select or initialize a PLCopen XML file.

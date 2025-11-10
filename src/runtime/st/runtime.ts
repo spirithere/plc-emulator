@@ -1,5 +1,5 @@
 import { StructuredTextBlock } from '../../types';
-import { IOSimService } from '../../io/ioService';
+import { RuntimeIOAdapter } from '../runtimeTypes';
 import { parseStructuredText, ParseDiagnostic } from './astBuilder';
 import { ProgramNode, VarDeclarationNode, VarSectionNode, VarSectionType } from './ast';
 import { ExecutionEnv, StValue, StructuredTextInterpreter } from './interpreter';
@@ -44,7 +44,7 @@ export class StructuredTextRuntime {
   private readonly diagnosticsListeners = new Set<(event: StructuredTextDiagnosticEvent) => void>();
 
   constructor(
-    private readonly ioService: IOSimService,
+    private readonly ioService: RuntimeIOAdapter,
     private readonly log: (message: string) => void = () => {}
   ) {
     this.interpreter = new StructuredTextInterpreter(message => this.log(message));
