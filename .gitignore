@@ -2,3 +2,4 @@ node_modules
 out
 .vscode-test
 .plc
+.DS_Store
