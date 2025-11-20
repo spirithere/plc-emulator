@@ -103,7 +103,8 @@ export class ExternalRuntimeController implements RuntimeController {
     await this.ensureHostReady();
     const pous = this.cloneStructuredText(this.plcService.getStructuredTextBlocks());
     const ladder = this.cloneLadderRungs(this.plcService.getLadderRungs());
-    await this.host.sendRequest('project.load', { pous, ladder });
+    const configurations = this.plcService.getModel().configurations ?? [];
+    await this.host.sendRequest('project.load', { pous, ladder, configurations });
   }
 
   private async forwardInputChanges(snapshot: IOStateSnapshot): Promise<void> {

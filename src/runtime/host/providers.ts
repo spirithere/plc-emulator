@@ -14,6 +14,10 @@ export class InMemoryPlcModelProvider implements PlcModelProvider {
     return this.ladder;
   }
 
+  public getConfigurations(): undefined {
+    return undefined;
+  }
+
   public onDidChangeModel(listener: () => void): DisposableLike {
     this.listeners.add(listener);
     return {

@@ -117,6 +117,7 @@ export class EmulatorController implements RuntimeController {
     return {
       getStructuredTextBlocks: () => this.plcService.getStructuredTextBlocks(),
       getLadderRungs: () => this.plcService.getLadderRungs(),
+      getConfigurations: () => this.plcService.getModel().configurations ?? [],
       onDidChangeModel: listener => {
         const disposable = this.plcService.onDidChangeModel(() => listener());
         return { dispose: () => disposable.dispose() };

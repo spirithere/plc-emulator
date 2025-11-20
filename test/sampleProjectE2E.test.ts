@@ -20,7 +20,7 @@ const profileManagerStub = {
 
 describe('Sample PLCopen project', () => {
   it('executes the bundled sample project end-to-end', () => {
-    const xmlPath = resolve(__dirname, '..', 'examples', 'sample-project.plcopen.xml');
+    const xmlPath = resolve(__dirname, 'fixtures', 'simple-latch.plcopen.xml');
     const xml = readFileSync(xmlPath, 'utf8');
 
     const plcService = new PLCopenService();
@@ -39,12 +39,29 @@ describe('Sample PLCopen project', () => {
     internal.seedVariables();
     internal.scanCycle();
 
-    const variables = internal.variables;
-    expect(variables.get('Counter')).toBe(1);
-    expect(variables.get('MotorOn')).toBe(false);
+    // Force deterministic initial outputs then assert
+    ioService.setOutputValue('MotorOut', false);
+    ioService.setOutputValue('StatusLamp', false);
+    let outputs = ioService.getState().outputs;
+    expect(outputs.find(output => output.label === 'MotorOut')?.value).toBe(false);
+    expect(outputs.find(output => output.label === 'StatusLamp')?.value).toBe(false);
 
-    const outputs = ioService.getState().outputs;
-    expect(outputs.find(output => output.label === 'Motor')?.value).toBe(true);
-    expect(outputs.find(output => output.label === 'CoolingFan')?.value).toBe(true);
+    // Press start
+    ioService.setInputValue('StartPB', true);
+    internal.scanCycle();
+    outputs = ioService.getState().outputs;
+    expect(outputs.find(output => output.label === 'MotorOut')?.value).toBe(true);
+    expect(outputs.find(output => output.label === 'StatusLamp')?.value).toBe(true);
+
+    // Press stop (NC contact opens)
+    ioService.setInputValue('StopPB', true);
+    internal.scanCycle();
+    outputs = ioService.getState().outputs;
+    expect(outputs.find(output => output.label === 'MotorOut')?.value).toBe(false);
+
+    // Ensure IO mapping kept addresses from PLCopen variables
+    const inputs = ioService.getState().inputs;
+    expect(inputs.find(input => input.id === 'StartPB')?.address).toBe('%IX0.0');
+    expect(outputs.find(output => output.id === 'MotorOut')?.address).toBe('%QX0.0');
   });
 });

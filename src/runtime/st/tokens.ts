@@ -30,6 +30,7 @@ export const LParen = createToken({ name: 'LParen', pattern: /\(/ });
 export const RParen = createToken({ name: 'RParen', pattern: /\)/ });
 export const LBracket = createToken({ name: 'LBracket', pattern: /\[/ });
 export const RBracket = createToken({ name: 'RBracket', pattern: /\]/ });
+export const AddressLiteral = createToken({ name: 'AddressLiteral', pattern: /%[IQM][A-Za-z0-9_.:-]+/ });
 
 // Operators
 export const Plus = createToken({ name: 'Plus', pattern: /\+/ });
@@ -61,9 +62,15 @@ export const VAR = keyword('VAR');
 export const VAR_INPUT = keyword('VAR_INPUT');
 export const VAR_OUTPUT = keyword('VAR_OUTPUT');
 export const VAR_IN_OUT = keyword('VAR_IN_OUT');
+export const VAR_GLOBAL = keyword('VAR_GLOBAL');
+export const VAR_EXTERNAL = keyword('VAR_EXTERNAL');
 export const VAR_TEMP = keyword('VAR_TEMP');
 export const END_VAR = keyword('END_VAR');
 export const END_PROGRAM = keyword('END_PROGRAM');
+export const RETAIN = keyword('RETAIN');
+export const PERSISTENT = keyword('PERSISTENT');
+export const CONSTANT = keyword('CONSTANT');
+export const AT = keyword('AT');
 
 export const IF = keyword('IF');
 export const THEN = keyword('THEN');
@@ -124,6 +131,7 @@ export const allTokens = [
   RParen,
   LBracket,
   RBracket,
+  AddressLiteral,
   Plus,
   Minus,
   Times,
@@ -135,6 +143,8 @@ export const allTokens = [
   GreaterThan,
   Equal,
   PROGRAM,
+  VAR_GLOBAL,
+  VAR_EXTERNAL,
   VAR_INPUT,
   VAR_OUTPUT,
   VAR_IN_OUT,
@@ -142,6 +152,10 @@ export const allTokens = [
   VAR,
   END_VAR,
   END_PROGRAM,
+  RETAIN,
+  PERSISTENT,
+  CONSTANT,
+  AT,
   IF,
   THEN,
   ELSIF,

@@ -86,7 +86,9 @@ const openCircuitLadder: LadderRung[] = [
 
 const plcServiceStub = {
   getStructuredTextBlocks: () => [structuredText],
-  getLadderRungs: () => ladder
+  getLadderRungs: () => ladder,
+  getConfigurations: () => [],
+  getModel: () => ({ pous: [structuredText], ladder, configurations: [] }),
 } as unknown as PLCopenService;
 
 const profile: PLCProfile = {
@@ -105,6 +107,8 @@ function createPlcService(stBlocks: StructuredTextBlock[], ladderRungs: LadderRu
   return {
     getStructuredTextBlocks: () => stBlocks,
     getLadderRungs: () => ladderRungs,
+    getConfigurations: () => [],
+    getModel: () => ({ pous: stBlocks, ladder: ladderRungs, configurations: [] }),
     onDidChangeModel: () => ({ dispose() {} })
   } as unknown as PLCopenService;
 }

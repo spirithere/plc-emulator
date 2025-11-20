@@ -96,4 +96,32 @@ describe('StructuredTextRuntime diagnostics', () => {
     expect(memory.get('Unsigned')).toBe(0);
     expect(memory.get('RealValue')).toBeCloseTo(3.5, 5);
   });
+
+  it('honors AT address mappings and IO directions', () => {
+    const ioService = new IOSimService();
+    const runtime = new StructuredTextRuntime(ioService);
+    const block: StructuredTextBlock = {
+      name: 'IoMapped',
+      body: [
+        'PROGRAM IoMapped',
+        '  VAR',
+        '    Start AT %IX0.7 : BOOL;',
+        '    Out AT %QX0.7 : BOOL := FALSE;',
+        '    ConstOne : BOOL := TRUE;',
+        '  END_VAR',
+        '  Out := Start AND ConstOne;',
+        'END_PROGRAM'
+      ].join('\n')
+    };
+
+    const memory = new Map<string, number | boolean | string>();
+    ioService.setInputValue('%IX0.7', true);
+
+    runtime.seed([block], memory);
+    runtime.execute([block], memory);
+
+    const outputs = ioService.getState().outputs;
+    expect(outputs.find(output => output.id === '%QX0.7')?.value).toBe(true);
+    expect(memory.get('Out')).toBe(true);
+  });
 });

@@ -1,0 +1,68 @@
+<project @_xmlns="http://www.plcopen.org/xml/tc6_0200" @_xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" @_xmlns:plcemu="https://vibe.codes/plc-emu">
+  <fileHeader @_companyName="plc-emu" @_productName="plc-emu" @_productVersion="0.1.0" @_creationDateTime="2025-11-20T17:22:45.568Z"></fileHeader>
+  <contentHeader @_name="plc-emu" @_modificationDateTime="2025-11-20T17:22:45.568Z" @_version="0.1.0" @_organization="plc-emu"></contentHeader>
+  <types>
+    <pous>
+      <pou @_name="UnnamedPOU" @_pouType="function">
+        <body ST="PROGRAM MainProgram
+  VAR
+    Counter : INT := 0;
+  END_VAR
+  Counter := Counter + 1;
+END_PROGRAM"></body>
+      </pou>
+      <pou @_name="UnnamedPOU" @_pouType="program">
+        <body ST=""></body>
+      </pou>
+      <pou @_name="MainLadder" @_pouType="program">
+        <body>
+          <LD>
+            <network @_name="LD_0">
+              <powerRail @_direction="left"></powerRail>
+              <contact @_localId="r0_e0" @_variable="XSTOP" @_negated="false"></contact>
+              <contact @_localId="r0_e1" @_variable="XSTART" @_negated="false"></contact>
+              <coil @_localId="r0_e2" @_variable="M0" @_negated="false"></coil>
+              <parallel>
+                <branch @_id="LD_0_branch_0_0" @_startColumn="0" @_endColumn="2">
+                  <contact @_localId="r0_b0_e0" @_variable="M0" @_negated="false"></contact>
+                </branch>
+              </parallel>
+            </network>
+            <network @_name="LD_1">
+              <powerRail @_direction="left"></powerRail>
+              <contact @_localId="r1_e0" @_variable="M0" @_negated="false"></contact>
+              <coil @_localId="r1_e1" @_variable="Y0" @_negated="false"></coil>
+            </network>
+          </LD>
+        </body>
+      </pou>
+    </pous>
+  </types>
+  <instances>
+    <configurations>
+      <configuration @_name="Config0">
+        <globalVars>
+          <variable @_name="StartPB" @_address="%IX0.0" @_constant="false" @_retain="false" @_persistent="false">
+            <type>
+              <BOOL></BOOL>
+            </type>
+          </variable>
+          <variable @_name="StopPB" @_address="%IX0.1" @_constant="false" @_retain="false" @_persistent="false">
+            <type>
+              <BOOL></BOOL>
+            </type>
+          </variable>
+          <variable @_name="MotorOut" @_address="%QX0.0" @_constant="false" @_retain="false" @_persistent="false">
+            <type>
+              <BOOL></BOOL>
+            </type>
+          </variable>
+        </globalVars>
+        <resource @_name="Resource1">
+          <task @_name="CyclicTask" @_priority="1" @_interval="PT0.1S" @_single="false"></task>
+          <program @_name="PRG_MainProgram" @_typeName="MainProgram" @_taskName="CyclicTask"></program>
+        </resource>
+      </configuration>
+    </configurations>
+  </instances>
+</project>

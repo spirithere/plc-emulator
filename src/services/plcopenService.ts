@@ -1,7 +1,18 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { XMLBuilder, XMLParser } from 'fast-xml-parser';
-import { LadderBranch, LadderElement, LadderRung, PLCProjectModel, StructuredTextBlock } from '../types';
+import {
+  Configuration,
+  LadderBranch,
+  LadderElement,
+  LadderRung,
+  PLCProjectModel,
+  ProjectMetadata,
+  StructuredTextBlock,
+  VariableDeclaration,
+  PouInterface
+} from '../types';
+import { parseStructuredText } from '../runtime/st/astBuilder';
 
 const parserOptions = {
   ignoreAttributes: false,
@@ -28,6 +39,12 @@ export class PLCopenService implements vscode.Disposable {
 
   public getModel(): PLCProjectModel {
     return this.model;
+  }
+
+  public async updateMetadata(metadata: Partial<ProjectMetadata>): Promise<void> {
+    this.model.metadata = { ...(this.model.metadata ?? {}), ...metadata };
+    await this.persist();
+    this.changeEmitter.fire(this.model);
   }
 
   public async pickAndLoadProject(): Promise<void> {
@@ -91,6 +108,68 @@ export class PLCopenService implements vscode.Disposable {
     return this.model.ladder;
   }
 
+  public getAllVariables(): VariableDeclaration[] {
+    const vars: VariableDeclaration[] = [];
+    this.model.configurations?.forEach(config => {
+      config.globalVars?.forEach(v => vars.push({ ...v, scope: 'configuration' }));
+      config.resources?.forEach(resource => {
+        resource.globalVars?.forEach(v => vars.push({ ...v, scope: 'resource' }));
+      });
+    });
+
+    // Parse ST var sections to surface local/POU-level variables (read-only for mapping UI).
+    this.model.pous.forEach(pou => {
+      const parsed = parseStructuredText(pou.body);
+      const sections = parsed.program?.varSections ?? [];
+      sections.forEach(section => {
+        section.declarations.forEach(decl => {
+          vars.push({
+            name: decl.name,
+            dataType: decl.dataType,
+            section: section.section,
+            scope: 'local',
+            address: decl.address,
+            retain: decl.retain,
+            persistent: decl.persistent,
+            constant: decl.constant,
+            documentation: undefined,
+            opcUaNodeId: undefined
+          });
+        });
+      });
+    });
+    return vars;
+  }
+
+  public async updateVariableMappings(updates: Array<Pick<VariableDeclaration, 'name' | 'address' | 'opcUaNodeId'>>): Promise<void> {
+    let mutated = false;
+    const apply = (vars: VariableDeclaration[] | undefined): void => {
+      vars?.forEach(v => {
+        const match = updates.find(u => u.name === v.name);
+        if (match) {
+          if (match.address !== undefined && v.address !== match.address) {
+            v.address = match.address;
+            mutated = true;
+          }
+          if (match.opcUaNodeId !== undefined && v.opcUaNodeId !== match.opcUaNodeId) {
+            v.opcUaNodeId = match.opcUaNodeId;
+            mutated = true;
+          }
+        }
+      });
+    };
+
+    this.model.configurations?.forEach(config => {
+      apply(config.globalVars);
+      config.resources?.forEach(resource => apply(resource.globalVars));
+    });
+
+    if (mutated) {
+      await this.persist();
+      this.changeEmitter.fire(this.model);
+    }
+  }
+
   public async updateStructuredTextBlock(name: string, body: string): Promise<void> {
     const block = this.model.pous.find(p => p.name === name);
     if (!block) {
@@ -98,6 +177,43 @@ export class PLCopenService implements vscode.Disposable {
     }
 
     block.body = body;
+    await this.persist();
+    this.changeEmitter.fire(this.model);
+  }
+
+  public async upsertPou(pou: StructuredTextBlock, options: { allowCreate?: boolean } = {}): Promise<void> {
+    const name = pou.name?.trim();
+    if (!name) {
+      throw new Error('POU name is required.');
+    }
+    pou.name = name;
+    const idx = this.model.pous.findIndex(p => p.name === pou.name);
+    if (idx >= 0) {
+      this.model.pous[idx] = { ...this.model.pous[idx], ...pou };
+    } else if (options.allowCreate) {
+      if (!pou.body) {
+        pou.body = `PROGRAM ${pou.name}\nEND_PROGRAM`;
+      }
+      this.model.pous.push(pou);
+    } else {
+      throw new Error(`POU ${pou.name} not found.`);
+    }
+    await this.persist();
+    this.changeEmitter.fire(this.model);
+  }
+
+  public async deletePou(name: string): Promise<void> {
+    const before = this.model.pous.length;
+    this.model.pous = this.model.pous.filter(p => p.name !== name);
+    if (this.model.pous.length === before) {
+      throw new Error(`POU ${name} not found.`);
+    }
+    await this.persist();
+    this.changeEmitter.fire(this.model);
+  }
+
+  public async updateConfigurations(configurations: Configuration[]): Promise<void> {
+    this.model.configurations = configurations;
     await this.persist();
     this.changeEmitter.fire(this.model);
   }
@@ -116,7 +232,9 @@ export class PLCopenService implements vscode.Disposable {
   private inflateModel(ast: any): PLCProjectModel {
     const pous = this.extractPous(ast);
     const ladder = this.extractLadder(ast);
-    return { pous, ladder };
+    const configurations = this.extractConfigurations(ast);
+    const metadata = this.extractMetadata(ast);
+    return { pous, ladder, configurations, metadata };
   }
 
   private extractPous(ast: any): StructuredTextBlock[] {
@@ -125,13 +243,80 @@ export class PLCopenService implements vscode.Disposable {
       return this.createDefaultModel().pous;
     }
 
-    return pouNodes.map((pou: any) => ({
-      name: pou?.name ?? 'UnnamedPOU',
-      body: pou?.body?.ST ?? pou?.body?.st ?? ''
-    }));
+    return pouNodes.map((pou: any) => {
+      const name = pou?.name ?? pou?.['@_name'] ?? 'UnnamedPOU';
+      const bodySt = typeof pou?.body?.ST === 'string' ? pou.body.ST : pou?.body?.st ?? '';
+      const interfaceSection = this.extractInterface(pou?.interface);
+      return {
+        name,
+        pouType: (pou?.pouType ?? pou?.['@_pouType'] ?? 'program') as any,
+        body: bodySt,
+        language: 'ST',
+        interface: interfaceSection
+      };
+    });
+  }
+
+  private extractInterface(node: any): PouInterface | undefined {
+    if (!node) return undefined;
+    const mapVars = (section: any): VariableDeclaration[] | undefined =>
+      ensureArray(section?.variable)?.map((v: any) => this.extractVar(v));
+    const interfaceObj: PouInterface = {
+      inputVars: mapVars(node.inputVars),
+      outputVars: mapVars(node.outputVars),
+      inOutVars: mapVars(node.inOutVars),
+      localVars: mapVars(node.localVars),
+      tempVars: mapVars(node.tempVars)
+    };
+    return Object.values(interfaceObj).some(arr => (arr?.length ?? 0) > 0) ? interfaceObj : undefined;
+  }
+
+  private extractVar(variable: any): VariableDeclaration {
+    const name = this.readAttr(variable, 'name') ?? variable?.name ?? 'Var';
+    const dataType = this.resolveDataType(variable?.type);
+    const address = this.readAttr(variable, 'address');
+    const constant = this.readAttr(variable, 'constant') === 'true';
+    const retain = this.readAttr(variable, 'retain') === 'true';
+    const persistent = this.readAttr(variable, 'persistent') === 'true';
+    const opcUaNodeId =
+      this.readAttr(variable, 'plcemu:opcUaNodeId') ??
+      this.readAttr(variable, 'opcUaNodeId') ??
+      variable?.['plcemu:opcUaNodeId'];
+    const initialSimple =
+      variable?.initialValue?.simpleValue?.value ??
+      variable?.initialValue?.simpleValue?.['@_value'] ??
+      variable?.initialValue?.simpleValue ??
+      variable?.initialValue?.['@_value'];
+    return {
+      name,
+      dataType,
+      address,
+      constant,
+      retain,
+      persistent,
+      documentation: variable?.documentation,
+      initialValue: this.parseSimpleValue(initialSimple),
+      ioDirection: this.inferIoDirection(address),
+      opcUaNodeId
+    };
   }
 
   private extractLadder(ast: any): LadderRung[] {
+    const ldPous = ensureArray(ast?.project?.types?.pous?.pou)?.filter((p: any) => p?.body?.LD || p?.body?.ld);
+    if (ldPous && ldPous.length > 0) {
+      const fromLd: LadderRung[] = [];
+      ldPous.forEach((pou: any, pouIndex: number) => {
+        const ldBody = pou.body?.LD ?? pou.body?.ld;
+        const networks = ensureArray(ldBody?.network);
+        networks?.forEach((net: any, netIndex: number) => {
+          fromLd.push(this.parseLdNetwork(net, `${pou?.name ?? 'LD'}_${netIndex ?? pouIndex}`));
+        });
+      });
+      if (fromLd.length > 0) {
+        return fromLd;
+      }
+    }
+
     const rungNodes = ensureArray(ast?.project?.ladder?.rung);
     if (!rungNodes) {
       return this.createDefaultModel().ladder;
@@ -202,6 +387,215 @@ export class PLCopenService implements vscode.Disposable {
     return branches.length ? branches : undefined;
   }
 
+  private extractMetadata(ast: any): ProjectMetadata | undefined {
+    const header = ast?.project?.fileHeader;
+    const content = ast?.project?.contentHeader;
+    const root = ast?.project;
+    if (!header && !content) {
+      return undefined;
+    }
+    const metadata: ProjectMetadata = {
+      companyName: header?.companyName ?? header?.['@_companyName'],
+      productName: header?.productName ?? header?.['@_productName'],
+      productVersion: header?.productVersion ?? header?.['@_productVersion'],
+      creationDateTime: header?.creationDateTime ?? header?.['@_creationDateTime'],
+      projectName: content?.name ?? content?.['@_name'],
+      organization: content?.organization ?? content?.['@_organization'],
+      contentVersion: content?.version ?? content?.['@_version'],
+      contentModificationDateTime: content?.modificationDateTime ?? content?.['@_modificationDateTime']
+    };
+    if (root?.['@_name']) metadata.projectName = root['@_name'];
+    if (root?.['@_productName']) metadata.productName = root['@_productName'];
+    if (root?.['@_productVersion']) metadata.productVersion = root['@_productVersion'];
+    return Object.values(metadata).some(Boolean) ? metadata : undefined;
+  }
+
+  private extractConfigurations(ast: any): Configuration[] | undefined {
+    const configurations = ensureArray(ast?.project?.instances?.configurations?.configuration);
+    if (!configurations) {
+      return this.createDefaultModel().configurations;
+    }
+    return configurations.map((config: any, idx: number) => ({
+      name: this.readAttr(config, 'name') ?? `Config${idx}`,
+      globalVars: this.extractVariables(ensureArray(config?.globalVars?.variable)),
+      resources:
+        ensureArray(config?.resource)?.map((resource: any, resourceIndex: number) => ({
+          name: this.readAttr(resource, 'name') ?? `Resource${resourceIndex}`,
+          tasks: this.extractTasks(ensureArray(resource?.task)),
+          programs: this.extractPrograms(ensureArray(resource?.program)),
+          globalVars: this.extractVariables(ensureArray(resource?.globalVars?.variable))
+        })) ?? []
+    }));
+  }
+
+  private extractTasks(nodes: any[] | undefined): any[] {
+    return (
+      nodes?.map((task: any, index: number) => ({
+        name: this.readAttr(task, 'name') ?? `Task${index}`,
+        interval: this.readAttr(task, 'interval'),
+        priority: Number.parseInt(this.readAttr(task, 'priority') ?? '1', 10),
+        single: this.readAttr(task, 'single') === 'true'
+      })) ?? []
+    );
+  }
+
+  private extractPrograms(nodes: any[] | undefined): any[] {
+    return (
+      nodes?.map((program: any, index: number) => ({
+        name: this.readAttr(program, 'name') ?? `Program${index}`,
+        typeName: this.readAttr(program, 'typeName') ?? this.readAttr(program, 'type') ?? 'MainProgram',
+        taskName: this.readAttr(program, 'taskName') ?? this.readAttr(program, 'task')
+      })) ?? []
+    );
+  }
+
+  private extractVariables(nodes: any[] | undefined): VariableDeclaration[] | undefined {
+    if (!nodes) {
+      return undefined;
+    }
+    return nodes.map((variable: any) => {
+      const name = this.readAttr(variable, 'name') ?? variable?.name ?? 'Var';
+      const dataType = this.resolveDataType(variable?.type);
+      const address = this.readAttr(variable, 'address');
+      const constant = this.readAttr(variable, 'constant') === 'true';
+      const retain = this.readAttr(variable, 'retain') === 'true';
+      const persistent = this.readAttr(variable, 'persistent') === 'true';
+      const opcUaNodeId =
+        this.readAttr(variable, 'plcemu:opcUaNodeId') ??
+        this.readAttr(variable, 'opcUaNodeId') ??
+        variable?.['plcemu:opcUaNodeId'];
+    const initialSimple =
+        variable?.initialValue?.simpleValue?.value ??
+        variable?.initialValue?.simpleValue?.['@_value'] ??
+        variable?.initialValue?.simpleValue ??
+        variable?.initialValue?.['@_value'];
+      return {
+        name,
+        dataType,
+        address,
+        constant,
+        retain,
+        persistent,
+        documentation: variable?.documentation,
+        initialValue: this.parseSimpleValue(initialSimple),
+        ioDirection: this.inferIoDirection(address),
+        opcUaNodeId
+      } as VariableDeclaration;
+    });
+  }
+
+  private readAttr(node: any, key: string): any {
+    return node?.[key] ?? node?.[`@_${key}`] ?? node?.[`_${key}`];
+  }
+
+  private inferIoDirection(address?: string): 'input' | 'output' | 'memory' | undefined {
+    if (!address) return undefined;
+    const normalized = address.trim().toUpperCase();
+    if (normalized.startsWith('%I')) return 'input';
+    if (normalized.startsWith('%Q')) return 'output';
+    if (normalized.startsWith('%M')) return 'memory';
+    return undefined;
+  }
+
+  private parseSimpleValue(raw: unknown): number | boolean | string | undefined {
+    if (raw === undefined || raw === null) return undefined;
+    if (typeof raw === 'boolean') return raw;
+    if (typeof raw === 'number') return raw;
+    const text = String(raw).trim();
+    if (/^(true|false)$/i.test(text)) {
+      return text.toLowerCase() === 'true';
+    }
+    const num = Number(text);
+    if (!Number.isNaN(num)) {
+      return num;
+    }
+    return text;
+  }
+
+  private resolveDataType(typeNode: any): string {
+    if (!typeNode) {
+      return 'BOOL';
+    }
+    if (typeof typeNode === 'string') {
+      return typeNode;
+    }
+    if (typeNode.derived?.['@_name']) {
+      return typeNode.derived['@_name'];
+    }
+    if (typeNode.derived?.name) {
+      return typeNode.derived.name;
+    }
+    const keys = Object.keys(typeNode);
+    if (keys.length > 0) {
+      return keys[0];
+    }
+    return 'BOOL';
+  }
+
+  private parseLdNetwork(network: any, fallbackId: string): LadderRung {
+    const id = network?.name ?? network?.id ?? fallbackId;
+    const elements: LadderElement[] = [];
+
+    const contactNodes = ensureArray(network?.contact);
+    const coilNodes = ensureArray(network?.coil);
+
+    contactNodes?.forEach((node: any, idx: number) => {
+      elements.push(this.ldNodeToElement(node, 'contact', `${id}_c${idx}`));
+    });
+    coilNodes?.forEach((node: any, idx: number) => {
+      elements.push(this.ldNodeToElement(node, 'coil', `${id}_k${idx}`));
+    });
+
+    const branches: LadderBranch[] | undefined = ensureArray(network?.parallel)
+      ?.flatMap((parallel: any, parallelIndex: number) =>
+        ensureArray(parallel?.branch)?.map((branch: any, branchIndex: number) => {
+          const branchElements: LadderElement[] = [];
+          ensureArray(branch?.contact)?.forEach((node: any, idx: number) => {
+            branchElements.push(this.ldNodeToElement(node, 'contact', `${id}_b${branchIndex}_c${idx}`));
+          });
+          ensureArray(branch?.coil)?.forEach((node: any, idx: number) => {
+            branchElements.push(this.ldNodeToElement(node, 'coil', `${id}_b${branchIndex}_k${idx}`));
+          });
+          const startColumnRaw = branch?.startColumn ?? branch?.['@_startColumn'] ?? '0';
+          const endColumnRaw = branch?.endColumn ?? branch?.['@_endColumn'];
+          const startColumn = Number.parseInt(startColumnRaw, 10);
+          const endColumnParsed =
+            endColumnRaw !== undefined ? Number.parseInt(endColumnRaw, 10) : startColumn + branchElements.length;
+          return {
+            id: branch?.id ?? `${id}_branch_${parallelIndex}_${branchIndex}`,
+            elements: branchElements,
+            startColumn: Number.isFinite(startColumn) ? startColumn : 0,
+            endColumn: Number.isFinite(endColumnParsed) ? endColumnParsed : (Number.isFinite(startColumn) ? startColumn + branchElements.length : branchElements.length)
+          } as LadderBranch;
+        }) ?? []
+      )
+      .filter(Boolean);
+
+    return {
+      id,
+      elements,
+      branches: branches && branches.length > 0 ? branches : undefined
+    };
+  }
+
+  private ldNodeToElement(node: any, type: 'contact' | 'coil', fallbackId: string): LadderElement {
+    const readAttr = (key: string): any => node?.[key] ?? node?.[`@_${key}`] ?? node?.[`_${key}`];
+    const label = readAttr('variable') ?? readAttr('label') ?? fallbackId;
+    const addrType = this.inferAddrType(label);
+    const negated = readAttr('negated');
+    const variant = negated === 'true' || negated === true ? 'nc' : 'no';
+    const stateRaw = readAttr('state');
+    const state = stateRaw === 'true' || stateRaw === true ? true : stateRaw === 'false' || stateRaw === false ? false : undefined;
+    return {
+      id: readAttr('localId') ?? readAttr('refLocalId') ?? readAttr('id') ?? fallbackId,
+      label,
+      type,
+      variant,
+      state,
+      addrType
+    };
+  }
+
   private async persist(): Promise<void> {
     if (!this.projectUri) {
       await this.ensureProjectFile();
@@ -234,40 +628,42 @@ export class PLCopenService implements vscode.Disposable {
   }
 
   private serializeModel(): any {
-    return {
-      project: {
-        types: {
-          pous: {
-            pou: this.model.pous.map(pou => ({
-              '@_name': pou.name,
-              '@_pouType': 'program',
-              body: { ST: pou.body }
-            }))
-          }
-        },
-        ladder: {
-          rung: this.model.ladder.map(rung => {
-            const rungNode: any = {
-              '@_id': rung.id,
-              element: rung.elements.map(element => this.serializeElement(element))
-            };
+    const pouNodes: any[] = this.model.pous.map(pou => ({
+      '@_name': pou.name,
+      '@_pouType': pou.pouType ?? 'program',
+      interface: this.serializeInterface(pou.interface),
+      body: { ST: pou.body }
+    }));
 
-            if (rung.branches && rung.branches.length > 0) {
-              rungNode.parallel = {
-                branch: rung.branches.map(branch => ({
-                  '@_id': branch.id,
-                  '@_startColumn': branch.startColumn,
-                  '@_endColumn': branch.endColumn,
-                  element: branch.elements.map(element => this.serializeElement(element))
-                }))
-              };
-            }
+    const ladderPou = this.serializeLadderPou();
+    if (ladderPou) {
+      pouNodes.push(ladderPou);
+    }
 
-            return rungNode;
-          })
-        }
+    const projectNode: any = {
+      '@_xmlns': 'http://www.plcopen.org/xml/tc6_0200',
+      '@_xmlns:xsi': 'http://www.w3.org/2001/XMLSchema-instance',
+      '@_xmlns:plcemu': 'https://vibe.codes/plc-emu',
+      '@_name': this.model.metadata?.projectName ?? this.model.metadata?.productName ?? 'PLCopenProject',
+      '@_productName': this.model.metadata?.productName ?? 'plc-emu',
+      '@_productVersion': this.model.metadata?.productVersion ?? '0.1.0',
+      fileHeader: this.serializeFileHeader(),
+      contentHeader: this.serializeContentHeader(),
+      types: {
+        pous: { pou: pouNodes }
       }
     };
+
+    const configurations = this.model.configurations ?? [];
+    if (configurations.length > 0) {
+      projectNode.instances = {
+        configurations: {
+          configuration: configurations.map(config => this.serializeConfiguration(config))
+        }
+      };
+    }
+
+    return { project: projectNode };
   }
 
   private serializeElement(element: LadderElement): any {
@@ -287,6 +683,195 @@ export class PLCopenService implements vscode.Disposable {
     }
 
     return serialized;
+  }
+
+  private serializeInterface(intf?: PouInterface): any | undefined {
+    if (!intf) return undefined;
+    const maybe = (vars?: VariableDeclaration[]) => (vars && vars.length ? { variable: vars.map(v => this.serializeVariable(v)) } : undefined);
+    const node: any = {
+      inputVars: maybe(intf.inputVars),
+      outputVars: maybe(intf.outputVars),
+      inOutVars: maybe(intf.inOutVars),
+      localVars: maybe(intf.localVars),
+      tempVars: maybe(intf.tempVars)
+    };
+    return Object.values(node).some(Boolean) ? node : undefined;
+  }
+
+  private serializeFileHeader(): any {
+    const meta = this.model.metadata ?? {};
+    return {
+      '@_companyName': meta.companyName ?? 'plc-emu',
+      '@_productName': meta.productName ?? 'plc-emu',
+      '@_productVersion': meta.productVersion ?? '0.1.0',
+      '@_creationDateTime': meta.creationDateTime ?? new Date().toISOString()
+    };
+  }
+
+  private serializeContentHeader(): any {
+    const meta = this.model.metadata ?? {};
+    return {
+      '@_name': meta.projectName ?? meta.productName ?? 'PLCopenProject',
+      '@_modificationDateTime': meta.contentModificationDateTime ?? new Date().toISOString(),
+      '@_version': meta.contentVersion ?? meta.productVersion ?? '0.1.0',
+      '@_organization': meta.organization ?? meta.companyName ?? 'plc-emu'
+    };
+  }
+
+  private serializeConfiguration(config: Configuration): any {
+    const node: any = {
+      '@_name': config.name
+    };
+    if (config.globalVars && config.globalVars.length > 0) {
+      node.globalVars = {
+        variable: config.globalVars.map(v => this.serializeVariable(v))
+      };
+    }
+    if (config.resources && config.resources.length > 0) {
+      node.resource = config.resources.map(resource => this.serializeResource(resource));
+    }
+    return node;
+  }
+
+  private serializeResource(resource: any): any {
+    const node: any = {
+      '@_name': resource.name,
+      task: (resource.tasks ?? []).map((task: any) => this.serializeTask(task)),
+      program: (resource.programs ?? []).map((program: any) => this.serializeProgramInstance(program))
+    };
+    if (resource.globalVars && resource.globalVars.length > 0) {
+      node.globalVars = { variable: resource.globalVars.map((v: VariableDeclaration) => this.serializeVariable(v)) };
+    }
+    return node;
+  }
+
+  private serializeTask(task: any): any {
+    const node: any = {
+      '@_name': task.name
+    };
+    if (task.priority !== undefined) node['@_priority'] = task.priority;
+    if (task.interval) node['@_interval'] = task.interval;
+    if (task.single !== undefined) node['@_single'] = `${task.single}`;
+    return node;
+  }
+
+  private serializeProgramInstance(program: any): any {
+    const node: any = {
+      '@_name': program.name,
+      '@_typeName': program.typeName
+    };
+    if (program.taskName) {
+      node['@_taskName'] = program.taskName;
+    }
+    return node;
+  }
+
+  private serializeVariable(variable: VariableDeclaration): any {
+    const node: any = {
+      '@_name': variable.name
+    };
+    if (variable.address) node['@_address'] = variable.address;
+    if (variable.constant !== undefined) node['@_constant'] = `${variable.constant}`;
+    if (variable.retain !== undefined) node['@_retain'] = `${variable.retain}`;
+    if (variable.persistent !== undefined) node['@_persistent'] = `${variable.persistent}`;
+    if (variable.opcUaNodeId) node['@_plcemu:opcUaNodeId'] = variable.opcUaNodeId;
+    node.type = this.serializeTypeNode(variable.dataType);
+    if (variable.initialValue !== undefined) {
+      node.initialValue = { simpleValue: { '@_value': this.serializeInitialValue(variable.initialValue) } };
+    }
+    if (variable.documentation) {
+      node.documentation = variable.documentation;
+    }
+    return node;
+  }
+
+  private serializeTypeNode(type: string): any {
+    const upper = type.toUpperCase();
+    const primitives = ['BOOL', 'INT', 'DINT', 'REAL', 'LREAL', 'STRING', 'WORD', 'DWORD'];
+    if (primitives.includes(upper)) {
+      return { [upper]: {} };
+    }
+    return { derived: { '@_name': type } };
+  }
+
+  private serializeInitialValue(value: number | boolean | string): string {
+    if (typeof value === 'boolean') return value ? 'TRUE' : 'FALSE';
+    return String(value);
+  }
+
+  private serializeLadderPou(): any | undefined {
+    if (!this.model.ladder || this.model.ladder.length === 0) {
+      return undefined;
+    }
+    return {
+      '@_name': 'MainLadder',
+      '@_pouType': 'program',
+      body: {
+        LD: {
+          network: this.model.ladder.map((rung, idx) => this.serializeNetwork(rung, idx))
+        }
+      }
+    };
+  }
+
+  private serializeNetwork(rung: LadderRung, index: number): any {
+    const network: any = {
+      '@_name': rung.id ?? `network_${index}`,
+      powerRail: { '@_direction': 'left' }
+    };
+    const contacts: any[] = [];
+    const coils: any[] = [];
+    rung.elements.forEach((el, elIndex) => {
+      const node = this.serializeLdElement(el, `${rung.id}_${elIndex}`);
+      if (el.type === 'contact') {
+        contacts.push(node);
+      } else {
+        coils.push(node);
+      }
+    });
+    if (contacts.length > 0) network.contact = contacts;
+    if (coils.length > 0) network.coil = coils;
+
+    if (rung.branches && rung.branches.length > 0) {
+      network.parallel = {
+        branch: rung.branches.map((branch, branchIndex) => this.serializeBranch(branch, branchIndex))
+      };
+    }
+    return network;
+  }
+
+  private serializeBranch(branch: LadderBranch, branchIndex: number): any {
+    const node: any = {
+      '@_id': branch.id ?? `branch_${branchIndex}`,
+      '@_startColumn': branch.startColumn,
+      '@_endColumn': branch.endColumn
+    };
+    const contacts: any[] = [];
+    const coils: any[] = [];
+    branch.elements.forEach((el, idx) => {
+      const serialized = this.serializeLdElement(el, `${branch.id}_${idx}`);
+      if (el.type === 'contact') {
+        contacts.push(serialized);
+      } else {
+        coils.push(serialized);
+      }
+    });
+    if (contacts.length > 0) node.contact = contacts;
+    if (coils.length > 0) node.coil = coils;
+    return node;
+  }
+
+  private serializeLdElement(element: LadderElement, fallbackId: string): any {
+    const negated = element.variant === 'nc';
+    const node: any = {
+      '@_localId': element.id ?? fallbackId,
+      '@_variable': element.label,
+      '@_negated': `${negated}`
+    };
+    if (element.type === 'coil') {
+      return node;
+    }
+    return node;
   }
 
   private async ensureProjectFile(): Promise<void> {
@@ -335,6 +920,11 @@ export class PLCopenService implements vscode.Disposable {
 
   private createDefaultModel(): PLCProjectModel {
     return {
+      metadata: {
+        companyName: 'plc-emu',
+        productName: 'plc-emu',
+        productVersion: '0.1.0'
+      },
       pous: [
         {
           name: 'MainProgram',
@@ -345,18 +935,42 @@ export class PLCopenService implements vscode.Disposable {
         {
           id: 'rung_0',
           elements: [
-            { id: 'r0_e0', label: 'X0', type: 'contact', state: true, variant: 'no', addrType: 'X' },
-            { id: 'r0_e1', label: 'Y0', type: 'coil', state: false, addrType: 'Y' }
+            { id: 'r0_e0', label: 'XSTOP', type: 'contact', state: false, variant: 'nc', addrType: 'X' },
+            { id: 'r0_e1', label: 'XSTART', type: 'contact', state: false, variant: 'no', addrType: 'X' },
+            { id: 'r0_e2', label: 'M0', type: 'coil', state: false, addrType: 'M' }
           ],
           branches: [
             {
               id: 'r0_b0',
               elements: [
-                { id: 'r0_b0_e0', label: 'M0', type: 'contact', state: true, variant: 'no', addrType: 'M' },
-                { id: 'r0_b0_e1', label: 'Y0', type: 'coil', state: false, addrType: 'Y' }
+                { id: 'r0_b0_e0', label: 'M0', type: 'contact', state: false, variant: 'no', addrType: 'M' }
               ],
               startColumn: 0,
-              endColumn: 1
+              endColumn: 2
+            }
+          ]
+        },
+        {
+          id: 'rung_1',
+          elements: [
+            { id: 'r1_e0', label: 'M0', type: 'contact', state: false, variant: 'no', addrType: 'M' },
+            { id: 'r1_e1', label: 'Y0', type: 'coil', state: false, addrType: 'Y' }
+          ]
+        }
+      ],
+      configurations: [
+        {
+          name: 'Config0',
+          globalVars: [
+            { name: 'StartPB', dataType: 'BOOL', address: '%IX0.0', ioDirection: 'input' },
+            { name: 'StopPB', dataType: 'BOOL', address: '%IX0.1', ioDirection: 'input' },
+            { name: 'MotorOut', dataType: 'BOOL', address: '%QX0.0', ioDirection: 'output' }
+          ],
+          resources: [
+            {
+              name: 'Resource1',
+              tasks: [{ name: 'CyclicTask', interval: 'PT0.1S', priority: 1 }],
+              programs: [{ name: 'PRG_MainProgram', typeName: 'MainProgram', taskName: 'CyclicTask' }]
             }
           ]
         }

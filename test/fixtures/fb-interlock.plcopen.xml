@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://www.plcopen.org/xml/tc6_0200" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" name="FBInterlockDemo" productName="plc-emu" productVersion="0.1.0">
+  <fileHeader companyName="DemoCo" productName="plc-emu" productVersion="0.1.0" creationDateTime="2025-11-20T00:00:00Z"/>
+  <contentHeader name="FBInterlockDemo" modificationDateTime="2025-11-20T00:00:00Z" version="1.0" organization="DemoCo"/>
+  <types>
+    <pous>
+      <pou name="FB_MotorInterlock" pouType="functionBlock">
+        <interface>
+          <inputVars>
+            <variable name="Cmd"><type><BOOL/></type></variable>
+            <variable name="AlarmReset"><type><BOOL/></type></variable>
+          </inputVars>
+          <outputVars>
+            <variable name="Out"><type><BOOL/></type></variable>
+            <variable name="Alarm"><type><BOOL/></type></variable>
+          </outputVars>
+          <localVars>
+            <variable name="StartDelayDone"><type><BOOL/></type></variable>
+          </localVars>
+        </interface>
+        <body><ST><![CDATA[
+IF Alarm THEN
+    Out := FALSE;
+    IF AlarmReset THEN
+        Alarm := FALSE;
+    END_IF;
+ELSIF Cmd THEN
+    StartDelayDone := TRUE;
+    IF StartDelayDone THEN
+        Out := TRUE;
+    END_IF;
+ELSE
+    Out := FALSE;
+END_IF;
+]]></ST></body>
+      </pou>
+
+      <pou name="Main_ST" pouType="program">
+        <interface>
+          <localVars>
+            <variable name="fbMotor"><type><derived name="FB_MotorInterlock"/></type></variable>
+          </localVars>
+        </interface>
+        <body><ST><![CDATA[
+fbMotor.Cmd := StartPB AND NOT StopPB;
+fbMotor.AlarmReset := FALSE;
+fbMotor(); (* execute FB *)
+MotorOut := fbMotor.Out;
+Alarm := fbMotor.Alarm;
+]]></ST></body>
+      </pou>
+    </pous>
+  </types>
+  <instances>
+    <configurations>
+      <configuration name="Config0">
+        <globalVars>
+          <variable name="StartPB" address="%IX0.0"><type><BOOL/></type></variable>
+          <variable name="StopPB" address="%IX0.1"><type><BOOL/></type></variable>
+          <variable name="MotorOut" address="%QX0.0"><type><BOOL/></type></variable>
+          <variable name="Alarm"><type><BOOL/></type></variable>
+        </globalVars>
+        <resource name="Resource1">
+          <task name="CyclicTask" priority="1" interval="PT0.05S"/>
+          <program name="PRG_Main_ST" typeName="Main_ST" taskName="CyclicTask"/>
+        </resource>
+      </configuration>
+    </configurations>
+  </instances>
+</project>

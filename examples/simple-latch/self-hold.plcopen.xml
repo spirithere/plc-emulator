@@ -1,0 +1,89 @@
+<project @_xmlns="http://www.plcopen.org/xml/tc6_0200" @_xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" @_xmlns:plcemu="https://vibe.codes/plc-emu" @_name="plc-emu" @_productName="plc-emu" @_productVersion="0.1.0">
+  <fileHeader @_companyName="plc-emu" @_productName="plc-emu" @_productVersion="0.1.0" @_creationDateTime="2025-11-20T00:00:00Z"></fileHeader>
+  <contentHeader @_name="plc-emu" @_modificationDateTime="2025-11-20T16:56:42.296Z" @_version="0.1.0" @_organization="plc-emu"></contentHeader>
+  <types>
+    <pous>
+      <pou @_name="UnnamedPOU" @_pouType="functionBlock">
+        <body ST=""></body>
+      </pou>
+      <pou @_name="MainLadder" @_pouType="program">
+        <body ST=""></body>
+      </pou>
+      <pou @_name="FB1" @_pouType="functionBlock">
+        <body ST="PROGRAM FB1
+END_PROGRAM"></body>
+      </pou>
+      <pou @_name="MainLadder" @_pouType="program">
+        <body ST=""></body>
+      </pou>
+      <pou @_name="MainLadder" @_pouType="program">
+        <body>
+          <LD>
+            <network @_name="LD_0">
+              <powerRail @_direction="left"></powerRail>
+              <contact @_localId="1" @_variable="StopPB" @_negated></contact>
+              <contact @_localId="2" @_variable="StartPB" @_negated="false"></contact>
+              <coil @_localId="4" @_variable="M0" @_negated="false"></coil>
+              <parallel>
+                <branch @_id="LD_0_branch_0_0" @_startColumn="1" @_endColumn="2">
+                  <contact @_localId="3" @_variable="M0" @_negated="false"></contact>
+                </branch>
+              </parallel>
+            </network>
+            <network @_name="LD_1">
+              <powerRail @_direction="left"></powerRail>
+              <contact @_localId="5" @_variable="M0" @_negated="false"></contact>
+              <coil @_localId="6" @_variable="MotorOut" @_negated="false"></coil>
+            </network>
+            <network @_name="LD_2">
+              <powerRail @_direction="left"></powerRail>
+              <contact @_localId="7" @_variable="MotorOut" @_negated="false"></contact>
+              <coil @_localId="8" @_variable="StatusLamp" @_negated="false"></coil>
+            </network>
+          </LD>
+        </body>
+      </pou>
+    </pous>
+  </types>
+  <instances>
+    <configurations>
+      <configuration @_name="Config0">
+        <globalVars>
+          <variable @_name="StartPB" @_address="%IX0.0" @_constant="false" @_retain="false" @_persistent="false" @_plcemu:opcUaNodeId="ns=2;s=Inputs/StartPB">
+            <type>
+              <BOOL></BOOL>
+            </type>
+          </variable>
+          <variable @_name="StopPB" @_address="%IX0.1" @_constant="false" @_retain="false" @_persistent="false" @_plcemu:opcUaNodeId="ns=2;s=Inputs/StopPB">
+            <type>
+              <BOOL></BOOL>
+            </type>
+          </variable>
+          <variable @_name="MotorCmd" @_constant="false" @_retain="false" @_persistent="false">
+            <type>
+              <BOOL></BOOL>
+            </type>
+            <initialValue>
+              <simpleValue @_value="FALSE"></simpleValue>
+            </initialValue>
+          </variable>
+          <variable @_name="MotorOut" @_address="%QX0.0" @_constant="false" @_retain="false" @_persistent="false" @_plcemu:opcUaNodeId="ns=2;s=Outputs/Motor">
+            <type>
+              <BOOL></BOOL>
+            </type>
+          </variable>
+          <variable @_name="StatusLamp" @_address="%QX0.1" @_constant="false" @_retain="false" @_persistent="false">
+            <type>
+              <BOOL></BOOL>
+            </type>
+          </variable>
+        </globalVars>
+        <resource @_name="Resource1">
+          <task @_name="CyclicTask" @_priority="1" @_interval="PT0.1S" @_single="false"></task>
+          <program @_name="PRG_Main_ST" @_typeName="Main_ST" @_taskName="CyclicTask"></program>
+          <program @_name="PRG_Main_LD" @_typeName="Main_LD" @_taskName="CyclicTask"></program>
+        </resource>
+      </configuration>
+    </configurations>
+  </instances>
+</project>

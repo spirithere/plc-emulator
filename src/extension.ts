@@ -6,6 +6,8 @@ import { EmulatorController, RuntimeController } from './runtime/emulator';
 import { ExternalRuntimeController } from './runtime/externalController';
 import { IOSimService } from './io/ioService';
 import { IOPanelManager } from './io/ioPanel';
+import { IOMappingPanelManager } from './io/ioMappingPanel';
+import { ProjectViewProvider } from './views/projectViewProvider';
 import { ProfileManager } from './runtime/profileManager';
 import { POUTreeProvider } from './views/pouTree';
 import { RuntimeViewProvider } from './views/runtimeView';
@@ -21,6 +23,8 @@ let plcService: PLCopenService;
 let ladderManager: LadderPanelManager;
 let ioService: IOSimService;
 let ioPanel: IOPanelManager;
+let ioMappingPanel: IOMappingPanelManager;
+let projectEditorView: ProjectViewProvider;
 let emulator: RuntimeController;
 let profileManager: ProfileManager;
 let pouTreeProvider: POUTreeProvider;
@@ -36,6 +40,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   plcService = new PLCopenService();
   ioService = new IOSimService();
   ioPanel = new IOPanelManager(context.extensionUri, ioService);
+  ioMappingPanel = new IOMappingPanelManager(context.extensionUri, plcService);
+  projectEditorView = new ProjectViewProvider(context.extensionUri, plcService);
   profileManager = new ProfileManager(context);
   const runtimeMode = vscode.workspace.getConfiguration('plcEmu').get<'embedded' | 'external'>('runtimeMode', 'embedded');
   if (runtimeMode === 'external') {
@@ -75,6 +81,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand('plcEmu.openStructuredTextBlock', (name: string) => openStructuredTextEditor(name)),
     vscode.commands.registerCommand('plcEmu.openLadderEditor', () => ladderManager.show()),
     vscode.commands.registerCommand('plcEmu.openIOSimulator', () => ioPanel.show()),
+    vscode.commands.registerCommand('plcEmu.openIOMapping', () => ioMappingPanel.show()),
+    vscode.commands.registerCommand('plcEmu.editProjectInfo', () => projectEditorView.showStandalone()),
     vscode.commands.registerCommand('plcEmu.openHmiDesigner', () => hmiDesigner.show()),
     vscode.commands.registerCommand('plcEmu.openHmiRuntime', () => hmiRuntime.show()),
     vscode.commands.registerCommand('plcEmu.switchProfile', () => profileManager.selectProfile()),
@@ -95,7 +103,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
     vscode.window.registerTreeDataProvider('plcPouExplorer', pouTreeProvider),
     vscode.window.registerWebviewViewProvider('plcRuntimeControls', runtimeViewProvider),
-    vscode.window.registerWebviewViewProvider('plcHmiView', hmiLauncherViewProvider)
+    vscode.window.registerWebviewViewProvider('plcHmiView', hmiLauncherViewProvider),
+    vscode.window.registerWebviewViewProvider(ProjectViewProvider.viewId, projectEditorView)
   );
   if (hostAdapter) {
     context.subscriptions.push(hostAdapter);

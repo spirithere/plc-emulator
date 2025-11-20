@@ -18,6 +18,9 @@
     "onCommand:plcEmu.openStructuredTextBlock",
     "onCommand:plcEmu.openLadderEditor",
     "onCommand:plcEmu.openIOSimulator",
+    "onCommand:plcEmu.openIOMapping",
+    "onCommand:plcEmu.editProjectInfo",
+    "onView:plcProjectEditor",
     "onCommand:plcEmu.switchProfile",
     "onCommand:plcEmu.run",
     "onCommand:plcEmu.stop",
@@ -52,6 +55,16 @@
         "command": "plcEmu.openIOSimulator",
         "title": "PLC Emulator: Open I/O Simulator",
         "icon": "$(circuit-board)"
+      },
+      {
+        "command": "plcEmu.openIOMapping",
+        "title": "PLC Emulator: Open I/O Mapping",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "plcEmu.editProjectInfo",
+        "title": "PLC Emulator: Edit Project Info",
+        "icon": "$(gear)"
       },
       {
         "command": "plcEmu.switchProfile",
@@ -105,6 +118,11 @@
           "id": "plcHmiView",
           "name": "HMI",
           "type": "webview"
+        },
+        {
+          "id": "plcProjectEditor",
+          "name": "Project",
+          "type": "webview"
         }
       ]
     },
@@ -155,6 +173,16 @@
           "group": "navigation@6"
         },
         {
+          "command": "plcEmu.openIOMapping",
+          "when": "view == plcPouExplorer",
+          "group": "navigation@6"
+        },
+        {
+          "command": "plcEmu.editProjectInfo",
+          "when": "view == plcPouExplorer",
+          "group": "navigation@9"
+        },
+        {
           "command": "plcEmu.openHmiDesigner",
           "when": "view == plcPouExplorer",
           "group": "navigation@7"
@@ -200,6 +228,16 @@
           "group": "navigation@6"
         },
         {
+          "command": "plcEmu.openIOMapping",
+          "when": "view == plcRuntimeControls",
+          "group": "navigation@6"
+        },
+        {
+          "command": "plcEmu.editProjectInfo",
+          "when": "view == plcRuntimeControls",
+          "group": "navigation@9"
+        },
+        {
           "command": "plcEmu.openHmiDesigner",
           "when": "view == plcRuntimeControls",
           "group": "navigation@7"
@@ -208,6 +246,11 @@
           "command": "plcEmu.openHmiRuntime",
           "when": "view == plcRuntimeControls",
           "group": "navigation@8"
+        },
+        {
+          "command": "plcEmu.editProjectInfo",
+          "when": "view == plcProjectEditor",
+          "group": "navigation@1"
         }
       ]
     },

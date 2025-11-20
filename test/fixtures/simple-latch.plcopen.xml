@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://www.plcopen.org/xml/tc6_0200" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" name="FixtureLatch" productName="plc-emu" productVersion="0.1.0">
+  <fileHeader companyName="Fixture" productName="plc-emu" productVersion="0.1.0" creationDateTime="2025-11-20T00:00:00Z"/>
+  <contentHeader name="FixtureLatch" modificationDateTime="2025-11-20T00:00:00Z" version="1.0" organization="FixtureCo"/>
+  <types>
+    <pous>
+      <pou name="Main_ST" pouType="program">
+        <body ST="PROGRAM Main_ST
+  VAR
+    RunRequest : BOOL := FALSE;
+  END_VAR
+
+  IF StartPB THEN
+    RunRequest := TRUE;
+  END_IF;
+
+  IF StopPB THEN
+    RunRequest := FALSE;
+  END_IF;
+
+  MotorCmd := RunRequest;
+END_PROGRAM"/>
+      </pou>
+      <pou name="MainLadder" pouType="program">
+        <body>
+          <LD>
+            <network name="LatchNetwork">
+              <powerRail direction="left"/>
+              <contact localId="1" variable="StopPB" negated="true" state="true"/>
+              <contact localId="2" variable="StartPB" negated="false" state="false"/>
+              <parallel>
+                <branch id="b0" startColumn="1" endColumn="2">
+                  <contact localId="3" variable="M0" negated="false" state="false"/>
+                </branch>
+              </parallel>
+              <coil localId="4" variable="M0" negated="false" state="false"/>
+            </network>
+            <network name="OutputNetwork">
+              <powerRail direction="left"/>
+              <contact localId="5" variable="M0" negated="false" state="false"/>
+              <coil localId="6" variable="MotorOut" negated="false" state="false"/>
+            </network>
+            <network name="LampNetwork">
+              <powerRail direction="left"/>
+              <contact localId="7" variable="MotorOut" negated="false" state="false"/>
+              <coil localId="8" variable="StatusLamp" negated="false" state="false"/>
+            </network>
+          </LD>
+        </body>
+      </pou>
+    </pous>
+  </types>
+  <instances>
+    <configurations>
+      <configuration name="Config0">
+        <globalVars>
+          <variable name="StartPB" address="%IX0.0"><type><BOOL/></type></variable>
+          <variable name="StopPB" address="%IX0.1"><type><BOOL/></type></variable>
+          <variable name="MotorCmd"><type><BOOL/></type></variable>
+          <variable name="MotorOut" address="%QX0.0"><type><BOOL/></type></variable>
+          <variable name="StatusLamp" address="%QX0.1"><type><BOOL/></type></variable>
+        </globalVars>
+        <resource name="Resource1">
+          <task name="CyclicTask" priority="1" interval="PT0.1S"/>
+          <program name="PRG_Main_ST" typeName="Main_ST" taskName="CyclicTask"/>
+          <program name="PRG_Main_LD" typeName="MainLadder" taskName="CyclicTask"/>
+        </resource>
+      </configuration>
+    </configurations>
+  </instances>
+</project>

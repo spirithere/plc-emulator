@@ -6,6 +6,7 @@ import {
   BY,
   CASE,
   Colon,
+  CONSTANT,
   DO,
   ELSE,
   END_CASE,
@@ -24,10 +25,12 @@ import {
   LBracket,
   LParen,
   MOD,
+  PERSISTENT,
   NOT,
   NumberLiteral,
   OF,
   OR,
+  RETAIN,
   PROGRAM,
   Range,
   REPEAT,
@@ -41,6 +44,8 @@ import {
   TRUE,
   UNTIL,
   VAR,
+  VAR_EXTERNAL,
+  VAR_GLOBAL,
   VAR_IN_OUT,
   VAR_INPUT,
   VAR_OUTPUT,
@@ -58,7 +63,9 @@ import {
   Minus,
   NotEqual,
   Plus,
-  Times
+  Times,
+  AT,
+  AddressLiteral
 } from './tokens';
 
 export class StructuredTextParser extends CstParser {
@@ -85,6 +92,8 @@ export class StructuredTextParser extends CstParser {
       { ALT: () => this.CONSUME(VAR_INPUT) },
       { ALT: () => this.CONSUME(VAR_OUTPUT) },
       { ALT: () => this.CONSUME(VAR_IN_OUT) },
+      { ALT: () => this.CONSUME(VAR_GLOBAL) },
+      { ALT: () => this.CONSUME(VAR_EXTERNAL) },
       { ALT: () => this.CONSUME(VAR_TEMP) }
     ]);
     this.MANY(() => {
@@ -94,10 +103,21 @@ export class StructuredTextParser extends CstParser {
   });
 
   private varDeclaration = this.RULE('varDeclaration', () => {
-    this.CONSUME(Identifier);
+    this.CONSUME(Identifier, { LABEL: 'varName' });
+    this.OPTION1(() => {
+      this.CONSUME(AT);
+      this.CONSUME(AddressLiteral, { LABEL: 'address' });
+    });
     this.CONSUME(Colon);
     this.SUBRULE(this.typeReference);
-    this.OPTION(() => {
+    this.MANY(() => {
+      this.OR([
+        { ALT: () => this.CONSUME(RETAIN) },
+        { ALT: () => this.CONSUME(PERSISTENT) },
+        { ALT: () => this.CONSUME(CONSTANT) }
+      ]);
+    });
+    this.OPTION2(() => {
       this.CONSUME(Assignment);
       this.SUBRULE(this.expression);
     });

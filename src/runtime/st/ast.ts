@@ -20,13 +20,24 @@ export interface VarSectionNode {
   range?: SourceRange;
 }
 
-export type VarSectionType = 'VAR' | 'VAR_INPUT' | 'VAR_OUTPUT' | 'VAR_IN_OUT' | 'VAR_TEMP';
+export type VarSectionType =
+  | 'VAR'
+  | 'VAR_INPUT'
+  | 'VAR_OUTPUT'
+  | 'VAR_IN_OUT'
+  | 'VAR_TEMP'
+  | 'VAR_GLOBAL'
+  | 'VAR_EXTERNAL';
 
 export interface VarDeclarationNode {
   type: 'VarDeclaration';
   name: string;
   dataType: string;
   initializer?: ExpressionNode;
+  address?: string;
+  constant?: boolean;
+  retain?: boolean;
+  persistent?: boolean;
   range?: SourceRange;
 }
 

@@ -1,0 +1,138 @@
+<project @_xmlns="http://www.plcopen.org/xml/tc6_0200" @_xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" @_xmlns:plcemu="https://vibe.codes/plc-emu" @_name="FBInterlockDemo" @_productName="plc-emu" @_productVersion="0.1.0">
+  <fileHeader @_companyName="DemoCo" @_productName="plc-emu" @_productVersion="0.1.0" @_creationDateTime="2025-11-20T00:00:00Z"></fileHeader>
+  <contentHeader @_name="FBInterlockDemo" @_modificationDateTime="2025-11-20T00:00:00Z" @_version="1.0" @_organization="DemoCo"></contentHeader>
+  <types>
+    <pous>
+      <pou @_name="FB_MotorInterlock" @_pouType="functionBlock">
+        <interface>
+          <inputVars>
+            <variable @_name="Cmd" @_constant="false" @_retain="false" @_persistent="false">
+              <type>
+                <BOOL></BOOL>
+              </type>
+            </variable>
+            <variable @_name="AlarmReset" @_constant="false" @_retain="false" @_persistent="false">
+              <type>
+                <BOOL></BOOL>
+              </type>
+            </variable>
+          </inputVars>
+          <outputVars>
+            <variable @_name="Out" @_constant="false" @_retain="false" @_persistent="false">
+              <type>
+                <BOOL></BOOL>
+              </type>
+            </variable>
+            <variable @_name="Alarm" @_constant="false" @_retain="false" @_persistent="false">
+              <type>
+                <BOOL></BOOL>
+              </type>
+            </variable>
+          </outputVars>
+          <localVars>
+            <variable @_name="StartDelayDone" @_constant="false" @_retain="false" @_persistent="false">
+              <type>
+                <BOOL></BOOL>
+              </type>
+            </variable>
+          </localVars>
+        </interface>
+        <body ST="IF Alarm THEN
+    Out := FALSE;
+    IF AlarmReset THEN
+        Alarm := FALSE;
+    END_IF;
+ELSIF Cmd THEN
+    StartDelayDone := TRUE; (* simplify TON *)
+    IF StartDelayDone THEN
+        Out := TRUE;
+    END_IF;
+ELSE
+    Out := FALSE;
+END_IF;"></body>
+      </pou>
+      <pou @_name="Main_ST" @_pouType="program">
+        <interface>
+          <localVars>
+            <variable @_name="fbMotor" @_constant="false" @_retain="false" @_persistent="false">
+              <type>
+                <derived @_name="FB_MotorInterlock"></derived>
+              </type>
+            </variable>
+          </localVars>
+        </interface>
+        <body ST="fbMotor.Cmd := StartPB AND NOT StopPB;
+fbMotor.AlarmReset := FALSE;
+fbMotor(); (* execute FB *)
+MotorOut := fbMotor.Out;
+Alarm := fbMotor.Alarm;"></body>
+      </pou>
+      <pou @_name="MainLadder" @_pouType="program">
+        <body ST=""></body>
+      </pou>
+      <pou @_name="MainLadder" @_pouType="program">
+        <body ST=""></body>
+      </pou>
+      <pou @_name="MainLadder" @_pouType="program">
+        <body ST=""></body>
+      </pou>
+      <pou @_name="MainLadder" @_pouType="program">
+        <body ST=""></body>
+      </pou>
+      <pou @_name="MainLadder" @_pouType="program">
+        <body>
+          <LD>
+            <network @_name="LD_0">
+              <powerRail @_direction="left"></powerRail>
+              <contact @_localId="r0_e0" @_variable="XSTOP" @_negated></contact>
+              <contact @_localId="r0_e1" @_variable="XSTART" @_negated="false"></contact>
+              <coil @_localId="r0_e2" @_variable="M0" @_negated="false"></coil>
+              <parallel>
+                <branch @_id="LD_0_branch_0_0" @_startColumn="1" @_endColumn="2">
+                  <contact @_localId="r0_b0_e0" @_variable="M0" @_negated="false"></contact>
+                </branch>
+              </parallel>
+            </network>
+            <network @_name="LD_1">
+              <powerRail @_direction="left"></powerRail>
+              <contact @_localId="r1_e0" @_variable="M0" @_negated="false"></contact>
+              <coil @_localId="r1_e1" @_variable="Y0" @_negated="false"></coil>
+            </network>
+          </LD>
+        </body>
+      </pou>
+    </pous>
+  </types>
+  <instances>
+    <configurations>
+      <configuration @_name="Config0">
+        <globalVars>
+          <variable @_name="StartPB" @_address="%IX0.0" @_constant="false" @_retain="false" @_persistent="false">
+            <type>
+              <BOOL></BOOL>
+            </type>
+          </variable>
+          <variable @_name="StopPB" @_address="%IX0.1" @_constant="false" @_retain="false" @_persistent="false">
+            <type>
+              <BOOL></BOOL>
+            </type>
+          </variable>
+          <variable @_name="MotorOut" @_address="%QX0.0" @_constant="false" @_retain="false" @_persistent="false">
+            <type>
+              <BOOL></BOOL>
+            </type>
+          </variable>
+          <variable @_name="Alarm" @_constant="false" @_retain="false" @_persistent="false">
+            <type>
+              <BOOL></BOOL>
+            </type>
+          </variable>
+        </globalVars>
+        <resource @_name="Resource1">
+          <task @_name="CyclicTask" @_priority="1" @_interval="PT0.05S" @_single="false"></task>
+          <program @_name="PRG_Main_ST" @_typeName="Main_ST" @_taskName="CyclicTask"></program>
+        </resource>
+      </configuration>
+    </configurations>
+  </instances>
+</project>

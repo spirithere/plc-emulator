@@ -100,6 +100,8 @@ class AstBuilder extends BaseVisitor {
       ctx.VAR_INPUT?.[0] ??
       ctx.VAR_OUTPUT?.[0] ??
       ctx.VAR_IN_OUT?.[0] ??
+      ctx.VAR_GLOBAL?.[0] ??
+      ctx.VAR_EXTERNAL?.[0] ??
       ctx.VAR_TEMP?.[0];
     const section: VarSectionType = (keywordToken.image?.toUpperCase() as VarSectionType) ?? 'VAR';
     const declarations =
@@ -114,13 +116,21 @@ class AstBuilder extends BaseVisitor {
   }
 
   varDeclaration(ctx: Record<string, any>): VarDeclarationNode {
-    const nameToken: IToken = ctx.Identifier[0];
+    const nameToken: IToken = (ctx.varName ?? ctx.Identifier)?.[0];
+    const addressToken: IToken | undefined = (ctx.address ?? ctx.AddressLiteral)?.[0];
     const dataType = this.visit(ctx.typeReference[0]) as string;
+    const retain = Array.isArray(ctx.RETAIN) && ctx.RETAIN.length > 0;
+    const persistent = Array.isArray(ctx.PERSISTENT) && ctx.PERSISTENT.length > 0;
+    const constant = Array.isArray(ctx.CONSTANT) && ctx.CONSTANT.length > 0;
     const declarationNode: VarDeclarationNode = {
       type: 'VarDeclaration',
       name: nameToken.image ?? '',
       dataType: dataType || 'UNKNOWN',
-      range: rangeFromTokens(nameToken, ctx.Semicolon[0])
+      range: rangeFromTokens(nameToken, ctx.Semicolon[0]),
+      address: addressToken?.image,
+      retain,
+      persistent,
+      constant
     };
     if (ctx.expression) {
       declarationNode.initializer = this.visit(ctx.expression[0]) as ExpressionNode;

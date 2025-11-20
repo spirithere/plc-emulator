@@ -1,4 +1,4 @@
-import { LadderRung, StructuredTextBlock } from '../types';
+import { Configuration, LadderRung, StructuredTextBlock } from '../types';
 
 export interface DisposableLike {
   dispose(): void;
@@ -7,6 +7,7 @@ export interface DisposableLike {
 export interface PlcModelProvider {
   getStructuredTextBlocks(): StructuredTextBlock[];
   getLadderRungs(): LadderRung[];
+  getConfigurations(): Configuration[] | undefined;
   onDidChangeModel(listener: () => void): DisposableLike;
 }
 

@@ -10,7 +10,7 @@ import {
   RuntimeStateListener
 } from './runtimeTypes';
 import { StructuredTextRuntime, StructuredTextDiagnosticEvent } from './st/runtime';
-import { LadderBranch, LadderElement, LadderRung, StructuredTextBlock } from '../types';
+import { Configuration, LadderBranch, LadderElement, LadderRung, StructuredTextBlock } from '../types';
 
 export interface RuntimeCoreOptions {
   modelProvider: PlcModelProvider;
@@ -161,7 +161,12 @@ export class RuntimeCore {
   private seedVariables(): void {
     this.variables.clear();
     this.stRuntime.reset();
-    const blocks = this.getStructuredTextBlocks();
+    const allPous = this.getStructuredTextBlocks();
+    const fbDefs = allPous.filter(b => (b.pouType ?? 'program') === 'functionBlock');
+    this.stRuntime.setFunctionBlocks(fbDefs);
+    this.seedGlobalVariables();
+    this.registerFunctionBlockInstances(allPous, fbDefs);
+    const blocks = allPous.filter(b => (b.pouType ?? 'program') === 'program');
     this.stRuntime.seed(blocks, this.variables);
   }
 
@@ -175,9 +180,12 @@ export class RuntimeCore {
   }
 
   private scanCycle(): void {
-    const pous = this.getStructuredTextBlocks();
+    const pous = this.getStructuredTextBlocks().filter(b => (b.pouType ?? 'program') === 'program');
     this.stRuntime.execute(pous, this.variables);
+    this.stRuntime.executeFunctionBlocks(this.variables);
     this.executeLadder(this.getLadderRungs());
+    // Run FBs again so ladder-updated FB inputs take effect in same scan
+    this.stRuntime.executeFunctionBlocks(this.variables);
 
     const snapshot = Object.fromEntries(this.variables) as RuntimeState;
     this.lastState = snapshot;
@@ -256,6 +264,39 @@ export class RuntimeCore {
 
       startPower[i + 1] = startPower[i + 1] || next;
     }
+  }
+
+  private seedGlobalVariables(): void {
+    const configurations = this.getConfigurations();
+    configurations?.forEach(config => {
+      (config.globalVars ?? []).forEach(variable => {
+        if (!variable?.name) {
+          return;
+        }
+        if (variable.initialValue !== undefined && !this.variables.has(variable.name)) {
+          this.variables.set(variable.name, variable.initialValue);
+        }
+        const direction =
+          variable.ioDirection ??
+          this.directionFromAddress(variable.address) ??
+          (this.inferAddrType(variable.name) === 'X'
+            ? 'input'
+            : this.inferAddrType(variable.name) === 'Y'
+              ? 'output'
+              : undefined);
+        if (direction === 'input') {
+          this.options.ioAdapter.setInputValue(
+            variable.address ?? variable.name,
+            this.toBoolean(variable.initialValue ?? false)
+          );
+        } else if (direction === 'output') {
+          this.options.ioAdapter.setOutputValue(
+            variable.address ?? variable.name,
+            this.toBoolean(variable.initialValue ?? false)
+          );
+        }
+      });
+    });
   }
 
   private executeSeries(elements: LadderElement[], initialPower: boolean, suffixReach?: boolean[]): boolean {
@@ -345,6 +386,11 @@ export class RuntimeCore {
         return ioValue;
       }
     }
+    const directIo = this.options.ioAdapter.getInputValue(label);
+    if (directIo !== undefined) {
+      this.variables.set(label, directIo);
+      return directIo;
+    }
     if (!this.variables.has(label)) {
       this.variables.set(label, fallback);
     }
@@ -389,12 +435,44 @@ export class RuntimeCore {
     this.logListeners.forEach(listener => listener(event));
   }
 
+  private directionFromAddress(address?: string): 'input' | 'output' | 'memory' | undefined {
+    if (!address) return undefined;
+    const normalized = address.trim().toUpperCase();
+    if (normalized.startsWith('%I')) return 'input';
+    if (normalized.startsWith('%Q')) return 'output';
+    if (normalized.startsWith('%M')) return 'memory';
+    return undefined;
+  }
+
+  private getConfigurations(): Configuration[] | undefined {
+    return this.options.modelProvider.getConfigurations?.();
+  }
+
   private getStructuredTextBlocks(): StructuredTextBlock[] {
     return this.options.modelProvider.getStructuredTextBlocks();
   }
 
   private getLadderRungs(): LadderRung[] {
     return this.options.modelProvider.getLadderRungs();
+  }
+
+  private registerFunctionBlockInstances(pous: StructuredTextBlock[], fbDefs: StructuredTextBlock[]): void {
+    const fbNames = new Set(fbDefs.map(fb => fb.name));
+    pous.forEach(pou => {
+      const intf = pou.interface;
+      if (!intf) return;
+      const sections = [
+        ...(intf.inputVars ?? []),
+        ...(intf.outputVars ?? []),
+        ...(intf.inOutVars ?? []),
+        ...(intf.localVars ?? [])
+      ];
+      sections.forEach(v => {
+        if (fbNames.has(v.dataType)) {
+          this.stRuntime.registerFbInstance(v.name, v.dataType);
+        }
+      });
+    });
   }
 }
 
