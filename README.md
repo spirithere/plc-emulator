@@ -1,65 +1,228 @@
-# PLC Emulator VS Code Extension (Prototype)
+# ⚡ plc-emu — An Open Playground for PLCs, OT, and AI Agents
 
-This repository hosts an early PLC emulator prototype built as a VS Code extension. It focuses on:
+Run and debug IEC‑style PLC logic on a plain laptop, store your projects in Git as human‑readable PLCopen XML, and give AI agents a place to learn industrial control without touching a single real machine.
 
-- Editing PLCopen XML projects while keeping Structured Text (ST) and ladder diagrams synchronized with a single source of truth.
-- Visual ladder editing inside a webview.
-- A lightweight IEC-style scan cycle emulator for rapid feedback.
+This repository contains a VS Code extension that turns PLC engineering into something you can do on a Saturday afternoon with a coffee instead of a million‑dollar test bench.
 
-## Getting Started
+> Important: this is an emulator for learning, experimentation, and research. It is **not** intended to drive real equipment or safety‑critical systems.
+
+---
+
+## Why This Project Exists 💡
+
+### 1. OT is full of "open" things that aren’t really open 🔓
+
+Industrial control and OT (Operational Technology) are full of specs and products with "Open" in the name. In practice:
+
+- Toolchains are vendor‑locked, license‑gated, and often tied to specific Windows versions.
+- Even "open" formats are hard to obtain, hard to read, or wrapped in proprietary tooling.
+- Just learning PLC programming usually requires buying hardware, licenses, and vendor IDEs.
+
+That friction slows down learning, experimentation, and community‑driven progress. This project tries to provide a genuinely open, low‑friction environment where anyone can explore PLC ideas with nothing more than VS Code and Node.js.
+
+### 2. Let AI agents do PLC engineering, too 🤖
+
+Today, AI agents can happily write Python or JavaScript but struggle with PLCs because:
+
+- The tools are not scriptable or headless.
+- The formats are messy or undocumented.
+- There is no cheap, safe runtime they can freely experiment against.
+
+By representing PLC programs as clean PLCopen XML in Git, and exposing a JSON‑RPC runtime host, this project aims to make PLC engineering just as agent‑friendly as web or backend work. The long‑term vision is:
+
+- **20x productivity** via agents that can generate, simulate, and refactor ladder/ST code.
+- **Self‑healing plants** where agents help with diagnostics, regression tests, and maintenance.
+- **Democratized OT education** so anyone can learn PLC concepts without vendor lock‑in or hardware.
+
+---
+
+## What You Can Do Today 🧪
+
+With this extension you can already:
+
+- **Edit PLCopen XML projects** and treat the XML as the single source of truth.
+- **Work with Structured Text (ST)** using VS Code’s native editor, syntax highlighting, and snippets.
+- **Edit ladder diagrams visually** in a webview ladder editor backed by PLCopen LD.
+- **Run a lightweight scan‑cycle emulator** that executes ST + ladder logic and exposes internal variables.
+- **Simulate digital I/O** with an I/O simulator panel (virtual inputs/outputs instead of real wires).
+- **Experiment with an HMI designer/runtime** that binds widgets to the same simulated I/O and variables.
+- **Keep everything in Git/GitHub** as regular text files (PLCopen XML + JSON), so reviews, diffs, and CI are natural.
+
+All of this runs locally, offline, on a general‑purpose machine. ✨
+
+### UI at a Glance 🖼️
+
+Here’s a snapshot of a simple latch project running entirely inside VS Code — ladder editor, runtime controls, I/O simulator, and HMI designer all wired together:
+
+![Screenshot: ladder editor, runtime controls, I/O simulator, and HMI designer running in VS Code](img/ss.png)
+
+---
+
+## Roadmap & Milestones 🗺️
+
+High‑level goals, expressed as a checklist so you can see where things are headed.
+
+### Core tooling
+
+- [x] VS Code extension scaffolded and activatable via commands.
+- [x] PLCopen XML parser/serializer with an in‑memory project model.
+- [x] Structured Text grammar, snippets, and mirrored `.st` files under `.plc/st/`.
+- [x] Ladder editor webview with basic contacts/coils and parallel branches.
+- [x] IEC‑style scan‑cycle emulator (ST + ladder subset).
+- [x] I/O simulator panel wired into the runtime.
+- [x] Project tree view with POUs and ladder rungs.
+- [ ] Breakpoints, stepping, and richer watch views.
+- [ ] First‑class diagnostics for ladder (not just ST).
+
+### Openness & interoperability
+
+- [x] Single source of truth: PLCopen XML stored in the workspace.
+- [x] Git‑friendly structure: everything is plain text; no opaque binary project files.
+- [ ] Profiles for common vendor dialects (timers, counters, vendor FBs).
+- [ ] Export pipelines that emit vendor‑specific PLCopen variants.
+- [ ] Reference converters to import/export from major PLC IDEs.
+
+### AI & agents
+
+- [x] External runtime host with JSON‑RPC so tools and agents can drive the emulator.
+- [ ] Stable, documented API surface for agents (introspect model, run tests, apply patches).
+- [ ] Example agent workflows ("generate ladder from spec", "auto‑tune timings", "add safety checks").
+- [ ] CI recipes that run the emulator headless to regression‑test PLC logic.
+
+### Future possibilities
+
+- [ ] Production‑grade runtime with predictable timing and robust error handling.
+- [ ] Hardware bridges to talk to real PLCs or soft‑PLCs (for lab use only).
+- [ ] Cloud runners for large‑scale simulation (e.g., order scheduling, what‑if analysis).
+- [ ] A library of open, reusable PLC function blocks maintained like any other OSS library.
+
+The implementation details behind many of these items live in `docs/implementation-plan.md`.
+
+---
+
+## Quick Start 🚀
+
+Requirements:
+
+- Node.js (LTS recommended)
+- VS Code 1.89 or later
+
+Install dependencies and compile the extension:
 
 ```bash
 npm install
 npm run compile
-npm test
+npm test   # optional, runs Vitest suite
 ```
 
-### External Runtime Host (experimental)
+Then open this folder in VS Code and start the Extension Development Host:
 
-Set `"plcEmu.runtimeMode": "external"` in your VS Code settings to run the IEC scan cycle in a standalone Runtime Host process. The extension will spawn the host automatically, but you can also run it manually via `npm run host`. The host exposes both stdio and a TCP socket (default `127.0.0.1:8123`), so VS Code and external agents can connect simultaneously. For quick ad‑hoc commands use `npm run plcrun -- <command>` (e.g., `npm run plcrun -- ping`). See `docs/runtime-host-cli.md` for the JSON-RPC protocol and automation tips.
+1. Press `F5` in VS Code.
+2. In the new window, run the command **PLC Emulator: Open PLCopen Project** to open or create a `project.plcopen.xml` file.
+3. Explore the **PLC Emulator** view in the Activity Bar to browse POUs and open the ladder/ST editors.
 
-Open the folder in VS Code and press `F5` to launch the extension host. Once running:
+### Everyday workflow
 
-1. Run **PLC Emulator: Open PLCopen Project** to select or initialize a PLCopen XML file.
-2. Use **PLC Emulator: Edit Structured Text Block** to mirror an ST block into `.plc/st/<POU>.st` for editing.
-3. Open the ladder editor via **PLC Emulator: Open Ladder Editor** and edit rungs visually.
-4. Use the **PLC Emulator** activity bar view to browse POUs and trigger runtime controls (run/stop, open ladder/I/O panels, switch profiles).
-5. Simulate field I/O with **PLC Emulator: Open I/O Simulator** and toggle digital inputs feeding the emulator.
-6. Switch dialect behavior via **PLC Emulator: Switch Dialect Profile** (IEC baseline or sample vendor variants).
-7. Start/stop execution with **PLC Emulator: Run Program** / **Stop Program**. Output streams to the *PLC Emulator* channel and a status-bar item shows scan timing.
+Once the project is open you can:
 
-## Folder Structure
+1. **Edit Structured Text**
+   - Run **PLC Emulator: Edit Structured Text Block**.
+   - The extension mirrors the block into `.plc/st/<POU>.st` so you can edit it like any other code file.
+   - On save, changes are pushed back into the PLCopen XML.
 
-- `src/extension.ts` — activation entry point and command wiring.
-- `src/services/plcopenService.ts` — PLCopen XML parsing/serialization with default models.
-- `src/ladder/ladderPanel.ts` & `media/ladder` — ladder editor webview assets.
-- `src/runtime/emulator.ts` — simple scan-cycle interpreter for ST + ladder plus I/O hooks.
-- `src/io/` — digital I/O simulation service + panel webview assets under `media/io-sim`.
-- `src/runtime/profileManager.ts` — prototype profile abstraction for vendor dialects.
-- `src/views/` & `media/runtime-controls` — sidebar tree + runtime control views.
-- `media/ladder` — ladder editor webview with IEC-style preview + editing controls.
-- `test/` — Vitest unit tests for the PLCopen service and emulator controller.
-- `syntaxes/` & `language-configuration.json` — syntax highlighting for ST files.
-- `.plc/` — generated mirror files for ST editing (ignored by git).
-- `examples/` — PLCopen XML samples including `self-hold.plcopen.xml` for latch testing.
+2. **Edit ladder diagrams**
+   - Run **PLC Emulator: Open Ladder Editor**.
+   - Use the visual editor to add contacts, coils, and branches.
+   - Save to write updated LD networks back into the PLCopen project.
 
-## Limitations
+3. **Run the emulator**
+   - Use **PLC Emulator: Run Program** / **Stop Program** or the toolbar buttons.
+   - Watch variable snapshots in the *PLC Emulator* output channel and status bar.
+   - Open **PLC Emulator: Open I/O Simulator** to toggle digital inputs and observe outputs.
 
-- The PLCopen conversion layer currently supports a simplified schema subset.
-- The ladder editor models series contacts/coils only.
-- The emulator executes straight-line assignments and basic ladder logic. Complex instructions/function blocks are placeholders for future milestones.
+4. **Experiment with HMI**
+   - Use **PLC Emulator: Open HMI Designer** to lay out basic widgets (buttons, lamps, sliders, etc.).
+   - Use **PLC Emulator: Open HMI Runtime** to see them bound to the simulated PLC variables.
+   - HMI configuration is stored in a JSON file controlled by `plcEmu.hmiFile` (defaults to `.plc/hmi.json`).
 
-Track implementation progress via `docs/implementation-plan.md`.
+---
 
-## HMI (Designer & Runtime)
+## External Runtime Host (for tools and agents) 🔌
 
-An experimental HMI editor and runtime are included:
+The emulator can also run in a separate process so tools and AI agents can connect without depending on VS Code internals.
 
-- Open the HMI Launcher from the activity bar under the PLC Emulator view named `HMI`, or run commands:
-  - `PLC Emulator: Open HMI Designer`
-  - `PLC Emulator: Open HMI Runtime`
-- HMI layout and bindings are stored in a workspace-relative JSON file controlled by the `plcEmu.hmiFile` setting (defaults to `.plc/hmi.json`).
-- JSON Schema validation is bundled and auto-applies to `hmi.json` files. See `schemas/hmi.schema.json` and the design notes in `docs/hmi-implementation-plan.md`.
-- A starter `examples/sample-hmi.json` is provided. Use the HMI launcher’s “Open hmi.json” to create one from the sample if missing.
+- Set `"plcEmu.runtimeMode": "external"` in your VS Code settings.
+- Run the host manually with:
 
-HMI MVP widgets: button, switch, slider, numeric, lamp, text, motor, cylinder. Designer supports drag, snap-to-grid, resize; Runtime binds to IO and variables.
+  ```bash
+  npm run host
+  ```
+
+- Or let the extension spawn it automatically when needed.
+
+The host exposes both stdio and a TCP socket (`127.0.0.1:8123` by default), speaking a simple JSON‑RPC protocol so external processes (agents, CI jobs, CLI tools) can:
+
+- Load PLCopen projects
+- Start/stop the runtime
+- Read/write variables and I/O
+
+For quick manual experiments:
+
+```bash
+npm run plcrun -- ping
+```
+
+See `docs/runtime-host-cli.md` for protocol details and examples.
+
+---
+
+## Project Layout 🗂️
+
+- `src/extension.ts` – extension activation and command wiring.
+- `src/services/plcopenService.ts` – PLCopen XML parsing/serialization and in‑memory project model.
+- `src/ladder/ladderPanel.ts` & `media/ladder` – ladder editor webview and SVG rendering.
+- `src/runtime/emulator.ts` – in‑process scan‑cycle emulator.
+- `src/runtime/host/*` – external runtime host and client CLI.
+- `src/io/*` – I/O simulation services and webview panels.
+- `src/views/*` – POU tree, runtime controls, project editor, HMI launcher.
+- `src/hmi/*` & `media/hmi-*` – HMI designer and runtime.
+- `syntaxes/` & `language-configuration.json` – ST language configuration and grammar.
+- `test/` – Vitest tests and fixtures under `test/fixtures/`.
+- `examples/` – sample PLCopen XML and HMI JSON.
+- `.plc/` – generated mirrors (`.st` files, HMI JSON by default); treated as ephemeral and git‑ignored.
+
+---
+
+## Limitations & Non‑Goals (for now) ⚠️
+
+This project is intentionally small and hackable. Some important caveats:
+
+- **Learning only** – The emulator is not suitable for real‑world control of machinery or safety‑critical systems.
+- **Partial PLCopen coverage** – Only a subset of the PLCopen schema is supported today.
+- **Simplified instruction set** – Many instructions/function blocks are not implemented yet.
+- **No hardware integration** – All I/O is simulated; there is no fieldbus or driver stack.
+- **Performance is "good enough" for a laptop lab**, not tuned for hard real‑time.
+
+If you need to ship a factory tomorrow, use a certified PLC platform. If you want to understand how PLCs work, teach others, or give agents something safe to break, you’re in the right place.
+
+---
+
+## Contributing 🤝
+
+This is still a prototype, but contributions are welcome:
+
+- Bug reports, ideas, and UX feedback for the ladder editor and emulator.
+- Improvements to PLCopen handling and vendor dialect profiles.
+- Examples and teaching materials built on top of this emulator.
+
+Before sending a PR:
+
+1. Run `npm run compile`.
+2. Run `npm test`.
+3. Prefer small, focused changes with clear commit messages.
+
+---
+
+## License
+
+This project is licensed under the MIT License. See `LICENSE` (or the repository metadata) for details.

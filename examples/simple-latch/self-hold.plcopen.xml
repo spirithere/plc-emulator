@@ -3,42 +3,29 @@
   <contentHeader @_name="plc-emu" @_modificationDateTime="2025-11-20T16:56:42.296Z" @_version="0.1.0" @_organization="plc-emu"></contentHeader>
   <types>
     <pous>
-      <pou @_name="UnnamedPOU" @_pouType="functionBlock">
-        <body ST=""></body>
-      </pou>
-      <pou @_name="MainLadder" @_pouType="program">
-        <body ST=""></body>
-      </pou>
-      <pou @_name="FB1" @_pouType="functionBlock">
-        <body ST="PROGRAM FB1
-END_PROGRAM"></body>
-      </pou>
-      <pou @_name="MainLadder" @_pouType="program">
-        <body ST=""></body>
-      </pou>
       <pou @_name="MainLadder" @_pouType="program">
         <body>
           <LD>
             <network @_name="LD_0">
               <powerRail @_direction="left"></powerRail>
-              <contact @_localId="1" @_variable="StopPB" @_negated></contact>
-              <contact @_localId="2" @_variable="StartPB" @_negated="false"></contact>
-              <coil @_localId="4" @_variable="M0" @_negated="false"></coil>
+              <contact @_localId="1" @_variable="StopPB" @_negated="true"></contact>
+              <contact @_localId="2" @_variable="StartPB"></contact>
+              <coil @_localId="4" @_variable="M0"></coil>
               <parallel>
                 <branch @_id="LD_0_branch_0_0" @_startColumn="1" @_endColumn="2">
-                  <contact @_localId="3" @_variable="M0" @_negated="false"></contact>
+                  <contact @_localId="3" @_variable="M0"></contact>
                 </branch>
               </parallel>
             </network>
             <network @_name="LD_1">
               <powerRail @_direction="left"></powerRail>
-              <contact @_localId="5" @_variable="M0" @_negated="false"></contact>
-              <coil @_localId="6" @_variable="MotorOut" @_negated="false"></coil>
+              <contact @_localId="5" @_variable="M0"></contact>
+              <coil @_localId="6" @_variable="MotorOut"></coil>
             </network>
             <network @_name="LD_2">
               <powerRail @_direction="left"></powerRail>
-              <contact @_localId="7" @_variable="MotorOut" @_negated="false"></contact>
-              <coil @_localId="8" @_variable="StatusLamp" @_negated="false"></coil>
+              <contact @_localId="7" @_variable="MotorOut"></contact>
+              <coil @_localId="8" @_variable="StatusLamp"></coil>
             </network>
           </LD>
         </body>

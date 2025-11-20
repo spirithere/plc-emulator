@@ -24,7 +24,9 @@ const builderOptions = {
   ignoreAttributes: false,
   attributeNamePrefix: '',
   format: true,
-  indentBy: '  '
+  indentBy: '  ',
+  // Keep boolean attributes as explicit values (negated="true") so LD contacts round-trip correctly.
+  suppressBooleanAttributes: false
 };
 
 export class PLCopenService implements vscode.Disposable {
@@ -77,6 +79,8 @@ export class PLCopenService implements vscode.Disposable {
   }
 
   public async loadFromUri(uri: vscode.Uri): Promise<void> {
+    await this.resetStMirrorCacheIfProjectChanged(uri);
+
     try {
       await this.loadUriIntoModel(uri);
     } catch (error) {
@@ -87,6 +91,30 @@ export class PLCopenService implements vscode.Disposable {
 
     this.projectUri = uri;
     this.registerProjectWatcher();
+  }
+
+  /**
+   * Clear the generated Structured Text mirror files when switching projects so
+   * remnants from a previous XML don't linger in `.plc/st/`.
+   */
+  private async resetStMirrorCacheIfProjectChanged(uri: vscode.Uri): Promise<void> {
+    // If we're reloading the same project file, keep the cache intact.
+    if (this.projectUri && this.projectUri.fsPath === uri.fsPath) {
+      return;
+    }
+
+    const workspaceFolder = vscode.workspace.getWorkspaceFolder(uri) ?? vscode.workspace.workspaceFolders?.[0];
+    if (!workspaceFolder) {
+      return;
+    }
+
+    const stMirrorDir = vscode.Uri.joinPath(workspaceFolder.uri, '.plc', 'st');
+    try {
+      await vscode.workspace.fs.delete(stMirrorDir, { recursive: true });
+    } catch (error) {
+      // Ignore if the mirror folder does not exist or cannot be removed.
+      console.warn('Failed to clear ST mirror cache', error);
+    }
   }
 
   public loadFromText(xml: string): void {
@@ -243,7 +271,11 @@ export class PLCopenService implements vscode.Disposable {
       return this.createDefaultModel().pous;
     }
 
-    return pouNodes.map((pou: any) => {
+    // Ignore ladder-only POUs so we don't mirror them as empty ST blocks and create
+    // duplicates on every save. The ladder networks are extracted separately.
+    const stPous = pouNodes.filter((pou: any) => !(pou?.body?.LD || pou?.body?.ld));
+
+    return stPous.map((pou: any) => {
       const name = pou?.name ?? pou?.['@_name'] ?? 'UnnamedPOU';
       const bodySt = typeof pou?.body?.ST === 'string' ? pou.body.ST : pou?.body?.st ?? '';
       const interfaceSection = this.extractInterface(pou?.interface);
@@ -251,10 +283,14 @@ export class PLCopenService implements vscode.Disposable {
         name,
         pouType: (pou?.pouType ?? pou?.['@_pouType'] ?? 'program') as any,
         body: bodySt,
-        language: 'ST',
+        language: 'ST' as const,
         interface: interfaceSection
       };
-    });
+    })
+      // Strip out empty ladder mirror POUs that were previously produced from LD networks.
+      .filter(
+        p => !(p.name === 'MainLadder' && (!p.body || p.body.trim() === '') && !p.interface)
+      );
   }
 
   private extractInterface(node: any): PouInterface | undefined {
@@ -628,7 +664,7 @@ export class PLCopenService implements vscode.Disposable {
   }
 
   private serializeModel(): any {
-    const pouNodes: any[] = this.model.pous.map(pou => ({
+    let pouNodes: any[] = this.model.pous.map(pou => ({
       '@_name': pou.name,
       '@_pouType': pou.pouType ?? 'program',
       interface: this.serializeInterface(pou.interface),
@@ -637,6 +673,9 @@ export class PLCopenService implements vscode.Disposable {
 
     const ladderPou = this.serializeLadderPou();
     if (ladderPou) {
+      const ladderName = ladderPou?.['@_name'] ?? ladderPou?.name;
+      // Remove any existing POU with the same name to avoid duplicates from previous saves.
+      pouNodes = pouNodes.filter(p => (p?.['@_name'] ?? p?.name) !== ladderName);
       pouNodes.push(ladderPou);
     }
 
@@ -865,9 +904,16 @@ export class PLCopenService implements vscode.Disposable {
     const negated = element.variant === 'nc';
     const node: any = {
       '@_localId': element.id ?? fallbackId,
-      '@_variable': element.label,
-      '@_negated': `${negated}`
+      '@_variable': element.label
     };
+
+    // PLCopen LD represents NC contacts via the "negated" attribute. Omit the
+    // attribute for NO to avoid generating empty-valued attributes in the XML.
+    if (element.type === 'contact') {
+      if (negated) {
+        node['@_negated'] = 'true';
+      }
+    }
     if (element.type === 'coil') {
       return node;
     }

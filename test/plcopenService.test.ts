@@ -14,7 +14,8 @@ describe('PLCopenService', () => {
     const ladder = service.getLadderRungs();
 
     expect(pous.length).toBeGreaterThanOrEqual(1);
-    expect(pous.map(p => p.name)).toContain('MainLadder');
+    expect(pous.map(p => p.name)).toContain('Main_ST');
+    expect(pous.map(p => p.name)).not.toContain('MainLadder');
     expect(ladder.length).toBeGreaterThan(0);
     expect(ladder[0].elements[0].label).toBe('StopPB');
   });
