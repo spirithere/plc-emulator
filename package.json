@@ -325,7 +325,7 @@
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "vscode:prepublish": "npm run compile",
-    "package": "npm run compile && vsce package",
+    "package": "npm run compile && npx @vscode/vsce package",
     "test": "vitest run",
     "host": "npm run compile && node ./out/runtime/host/cli.js",
     "plcrun": "node ./out/runtime/host/client.js"
