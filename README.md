@@ -221,6 +221,12 @@ Before sending a PR:
 2. Run `npm test`.
 3. Prefer small, focused changes with clear commit messages.
 
+For contributor workflow and repository operations, see:
+- `AGENTS.md` (engineering and `gh`-based PR workflow)
+- `CONTRIBUTING.md` (day-to-day contribution steps)
+- `docs/ci-cd.md` (CI/CD pipeline behavior)
+- `docs/release-versioning.md` (SemVer and release policy)
+
 ---
 
 ## License
