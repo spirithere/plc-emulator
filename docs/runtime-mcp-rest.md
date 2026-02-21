@@ -3,6 +3,12 @@
 `plc-emu` には JSON-RPC ホストとは別に、FastMCP ベースの MCP/REST サーバー実装があります。  
 このサーバーは 1 つのランタイム状態を MCP tools と REST API の両方から操作できます。
 
+JSON-RPC と同時公開したい場合は次も利用できます:
+
+```bash
+npm run host:all
+```
+
 ## 起動
 
 ```bash

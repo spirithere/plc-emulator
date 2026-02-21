@@ -329,6 +329,7 @@
     "package": "npm run compile && npx @vscode/vsce package",
     "test": "vitest run",
     "host": "npm run compile && node ./out/runtime/host/cli.js",
+    "host:all": "npm run compile && node ./out/runtime/host/cli.js --mcp-port=8124",
     "host:mcp": "npm run compile && node ./out/runtime/mcp/cli.js",
     "plcrun": "node ./out/runtime/host/client.js"
   },

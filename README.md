@@ -189,6 +189,12 @@ This exposes:
 
 See `docs/runtime-mcp-rest.md` for available tools, resources, and REST routes.
 
+To expose JSON-RPC + MCP + REST together (shared runtime state), run:
+
+```bash
+npm run host:all
+```
+
 ---
 
 ## Project Layout 🗂️

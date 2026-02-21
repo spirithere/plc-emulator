@@ -13,6 +13,8 @@ npm run host -- --port=8123   # Runtime Host CLI を起動（ポート指定可�
 ```
 
 - `npm run host` は `out/runtime/host/cli.js` を Node.js で実行します。`--port=<number>` を渡すと TCP リッスンポートを変更できます（既定 8123）。
+- `--mcp-port=<number>` を併用すると、同一ランタイム状態を共有したまま FastMCP + REST サーバーも同時起動します（例: `npm run host -- --port=8123 --mcp-port=8124`）。
+- `npm run host:all` は `runtime/host` (JSON-RPC) と `runtime/mcp` (MCP + REST) を同一プロセスでまとめて起動するショートカットです。
 - external runtime モードで VS Code から起動した場合も同じプロセスが `127.0.0.1:<port>` を開放するため、拡張 UI と並行して外部クライアントが接続できます。
 - CLI は標準入力からの JSON-RPC と TCP ソケットからの JSON-RPC を同時に受け付け、レスポンス／通知を JSON 1 行で返します。標準エラーにはログ（INFO/WARN/ERROR）が出力されるので、スクリプトでは stdout/stderr を分けて扱ってください。
 

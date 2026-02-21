@@ -5,6 +5,7 @@ import { RuntimeCore } from '../runtimeCore';
 import { RuntimeLogEvent } from '../runtimeTypes';
 import { RuntimeApplicationService, RuntimeInputWrite, RuntimeVariableWrite } from '../runtimeApplicationService';
 import { InMemoryPlcModelProvider, MemoryIOAdapter } from './providers';
+import { createRuntimeMcpServer, RuntimeMcpServer } from '../mcp/server';
 
 interface RpcRequest {
   id?: number | string;
@@ -290,6 +291,9 @@ const ioAdapter = new MemoryIOAdapter();
 const defaultPort = 8123;
 const portArg = process.argv.find(arg => arg.startsWith('--port='));
 const port = portArg ? Number.parseInt(portArg.split('=')[1] ?? '', 10) : defaultPort;
+const mcpPortArg = process.argv.find(arg => arg.startsWith('--mcp-port='));
+const mcpHostArg = process.argv.find(arg => arg.startsWith('--mcp-host='));
+const mcpEndpointArg = process.argv.find(arg => arg.startsWith('--mcp-endpoint='));
 const runtime = new RuntimeCore({
   modelProvider,
   ioAdapter,
@@ -304,11 +308,46 @@ const server = new RuntimeHostServer(runtime, runtimeApp, ioAdapter, {
 });
 server.start();
 
-const shutdown = (): void => {
+let mcpServer: RuntimeMcpServer | undefined;
+const envMcpPort = process.env.PLC_MCP_PORT;
+const parsedMcpPort = mcpPortArg
+  ? Number.parseInt(mcpPortArg.split('=')[1] ?? '', 10)
+  : envMcpPort
+    ? Number.parseInt(envMcpPort, 10)
+    : undefined;
+
+if (parsedMcpPort !== undefined && Number.isFinite(parsedMcpPort)) {
+  const mcpHost = (mcpHostArg?.split('=')[1] || process.env.PLC_MCP_HOST || '127.0.0.1').trim();
+  const endpointRaw = (mcpEndpointArg?.split('=')[1] || process.env.PLC_MCP_ENDPOINT || '/mcp').trim();
+  const endpoint = (endpointRaw.startsWith('/') ? endpointRaw : `/${endpointRaw}`) as `/${string}`;
+
+  mcpServer = createRuntimeMcpServer(runtimeApp, {
+    endpoint,
+    host: mcpHost,
+    port: parsedMcpPort
+  });
+  void mcpServer
+    .start()
+    .then(() => {
+      process.stderr.write(`[MCP] Runtime MCP server started on http://${mcpHost}:${parsedMcpPort}${endpoint}\n`);
+      process.stderr.write(`[REST] Runtime REST API available at http://${mcpHost}:${parsedMcpPort}/api/v1\n`);
+    })
+    .catch(error => {
+      process.stderr.write(`[MCP] Failed to start runtime MCP server: ${error instanceof Error ? error.message : String(error)}\n`);
+    });
+}
+
+const shutdown = async (): Promise<void> => {
   runtime.stop();
   server.dispose();
+  await mcpServer?.stop().catch(() => undefined);
+  runtime.dispose();
   process.exit(0);
 };
 
-process.on('SIGINT', shutdown);
-process.on('SIGTERM', shutdown);
+process.on('SIGINT', () => {
+  void shutdown();
+});
+process.on('SIGTERM', () => {
+  void shutdown();
+});

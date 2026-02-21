@@ -1,0 +1,4 @@
+interface:
+  display_name: "PLC Runtime MCP Control"
+  short_description: "Control and verify PLC runtime through MCP and REST APIs"
+  default_prompt: "Use $plc-runtime-mcp-control to control the PLC runtime via MCP tools and validate state transitions."
