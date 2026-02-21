@@ -5,8 +5,10 @@ import {
   RuntimeIOAdapter,
   RuntimeLogEvent,
   RuntimeLogListener,
+  RuntimeMetrics,
   RuntimeState,
   RuntimeStateEvent,
+  RuntimeValue,
   RuntimeStateListener
 } from './runtimeTypes';
 import { StructuredTextRuntime, StructuredTextDiagnosticEvent } from './st/runtime';
@@ -21,7 +23,7 @@ export interface RuntimeCoreOptions {
 
 export class RuntimeCore {
   private readonly stRuntime: StructuredTextRuntime;
-  private readonly variables = new Map<string, number | boolean | string>();
+  private readonly variables = new Map<string, RuntimeValue>();
   private readonly stateListeners = new Set<RuntimeStateListener>();
   private readonly runStateListeners = new Set<RunStateListener>();
   private readonly logListeners = new Set<RuntimeLogListener>();
@@ -31,7 +33,12 @@ export class RuntimeCore {
   private running = false;
   private sequence = 0;
   private lastState: RuntimeState = {};
+  private lastStateEvent: RuntimeStateEvent | undefined;
   private currentScanTimeMs: number;
+  private totalScans = 0;
+  private lastScanDurationMs = 0;
+  private lastScanTimestamp: number | undefined;
+  private scanErrorCount = 0;
 
   constructor(private readonly options: RuntimeCoreOptions) {
     this.currentScanTimeMs = options.defaultScanTimeMs ?? 100;
@@ -54,6 +61,12 @@ export class RuntimeCore {
 
     this.currentScanTimeMs = Math.max(10, scanTimeMs ?? this.currentScanTimeMs);
     this.seedVariables();
+    this.lastState = this.snapshotMemory();
+    this.lastStateEvent = {
+      snapshot: this.lastState,
+      sequence: this.sequence,
+      timestamp: Date.now()
+    };
     this.running = true;
     this.emitRunState(true);
     this.emitLog({
@@ -109,6 +122,67 @@ export class RuntimeCore {
     return this.lastState;
   }
 
+  public getLastStateEvent(): RuntimeStateEvent | undefined {
+    return this.lastStateEvent;
+  }
+
+  public reset(): RuntimeState {
+    this.stop();
+    this.sequence = 0;
+    this.totalScans = 0;
+    this.lastScanDurationMs = 0;
+    this.lastScanTimestamp = undefined;
+    this.scanErrorCount = 0;
+    this.seedVariables();
+
+    const snapshot = this.snapshotMemory();
+    const event: RuntimeStateEvent = {
+      snapshot,
+      sequence: this.sequence,
+      timestamp: Date.now()
+    };
+
+    this.lastState = snapshot;
+    this.lastStateEvent = event;
+    this.stateListeners.forEach(listener => listener(event));
+    this.emitLog({ level: 'info', scope: 'runtime', message: 'Runtime reset.' });
+    return snapshot;
+  }
+
+  public step(cycles = 1): RuntimeStateEvent | undefined {
+    if (this.running) {
+      throw new Error('Cannot step runtime while running.');
+    }
+
+    const normalizedCycles = Math.max(0, Math.floor(cycles));
+    if (normalizedCycles === 0) {
+      return undefined;
+    }
+
+    if (this.variables.size === 0) {
+      this.seedVariables();
+      this.lastState = this.snapshotMemory();
+    }
+
+    let lastEvent: RuntimeStateEvent | undefined;
+    for (let i = 0; i < normalizedCycles; i += 1) {
+      lastEvent = this.scanCycle();
+    }
+    return lastEvent;
+  }
+
+  public getMetrics(): RuntimeMetrics {
+    return {
+      running: this.running,
+      currentScanTimeMs: this.currentScanTimeMs,
+      sequence: this.sequence,
+      totalScans: this.totalScans,
+      lastScanDurationMs: this.lastScanDurationMs,
+      lastScanTimestamp: this.lastScanTimestamp,
+      scanErrorCount: this.scanErrorCount
+    };
+  }
+
   public onState(listener: RuntimeStateListener): DisposableLike {
     this.stateListeners.add(listener);
     return {
@@ -154,7 +228,7 @@ export class RuntimeCore {
   }
 
   /** @internal used by unit tests */
-  public debugGetMemory(): Map<string, number | boolean | string> {
+  public debugGetMemory(): Map<string, RuntimeValue> {
     return this.variables;
   }
 
@@ -175,11 +249,13 @@ export class RuntimeCore {
       this.scanCycle();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      this.scanErrorCount += 1;
       this.emitLog({ level: 'error', scope: 'runtime', message: `Scan failed: ${message}` });
     }
   }
 
-  private scanCycle(): void {
+  private scanCycle(): RuntimeStateEvent {
+    const startedAt = Date.now();
     const pous = this.getStructuredTextBlocks().filter(b => (b.pouType ?? 'program') === 'program');
     this.stRuntime.execute(pous, this.variables);
     this.stRuntime.executeFunctionBlocks(this.variables);
@@ -187,13 +263,17 @@ export class RuntimeCore {
     // Run FBs again so ladder-updated FB inputs take effect in same scan
     this.stRuntime.executeFunctionBlocks(this.variables);
 
-    const snapshot = Object.fromEntries(this.variables) as RuntimeState;
+    const snapshot = this.snapshotMemory();
     this.lastState = snapshot;
     const event: RuntimeStateEvent = {
       snapshot,
       sequence: ++this.sequence,
       timestamp: Date.now()
     };
+    this.totalScans += 1;
+    this.lastScanTimestamp = event.timestamp;
+    this.lastScanDurationMs = Math.max(0, Date.now() - startedAt);
+    this.lastStateEvent = event;
     this.stateListeners.forEach(listener => listener(event));
     this.emitLog({
       level: 'info',
@@ -201,6 +281,11 @@ export class RuntimeCore {
       message: 'Scan complete.',
       details: { sequence: event.sequence }
     });
+    return event;
+  }
+
+  private snapshotMemory(): RuntimeState {
+    return Object.fromEntries(this.variables) as RuntimeState;
   }
 
   private executeLadder(rungs: LadderRung[]): void {

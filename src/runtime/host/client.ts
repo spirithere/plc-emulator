@@ -30,10 +30,25 @@ const commands: Record<string, CommandConfig> = {
     buildParams: () => ({}),
     description: 'Stop scan cycles.'
   },
+  step: {
+    method: 'runtime.step',
+    buildParams: ([cycles]) => ({ cycles: cycles ? Number(cycles) || 1 : 1 }),
+    description: 'Execute scan cycles once while stopped (optional cycle count).'
+  },
+  reset: {
+    method: 'runtime.reset',
+    buildParams: () => ({}),
+    description: 'Stop and reset runtime memory/state.'
+  },
   state: {
     method: 'runtime.state.get',
     buildParams: () => ({}),
     description: 'Fetch the most recent scan snapshot.'
+  },
+  metrics: {
+    method: 'runtime.metrics.get',
+    buildParams: () => ({}),
+    description: 'Fetch runtime metrics.'
   },
   vars: {
     method: 'runtime.variables.list',
