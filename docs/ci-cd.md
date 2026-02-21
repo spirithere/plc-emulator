@@ -13,8 +13,7 @@ Trigger:
 
 Checks:
 - `npm ci`
-- `npm run compile`
-- `npm test`
+- `npm run verify` (`compile` + `test`)
 
 ### 2. PR Title Lint (`.github/workflows/pr-title.yml`)
 Trigger:
@@ -40,7 +39,7 @@ Trigger:
 
 Behavior:
 - installs dependencies
-- compiles and tests
+- runs `npm run verify`
 - builds VSIX package
 - uploads VSIX to the GitHub release assets
 

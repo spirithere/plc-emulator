@@ -217,8 +217,7 @@ This is still a prototype, but contributions are welcome:
 
 Before sending a PR:
 
-1. Run `npm run compile`.
-2. Run `npm test`.
+1. Run `npm run verify`.
 3. Prefer small, focused changes with clear commit messages.
 
 For contributor workflow and repository operations, see:
