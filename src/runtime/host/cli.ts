@@ -3,6 +3,7 @@ import * as readline from 'node:readline';
 import * as net from 'node:net';
 import { RuntimeCore } from '../runtimeCore';
 import { RuntimeLogEvent } from '../runtimeTypes';
+import { RuntimeApplicationService, RuntimeInputWrite, RuntimeVariableWrite } from '../runtimeApplicationService';
 import { InMemoryPlcModelProvider, MemoryIOAdapter } from './providers';
 
 interface RpcRequest {
@@ -23,7 +24,7 @@ class RuntimeHostServer {
 
   constructor(
     private readonly runtime: RuntimeCore,
-    private readonly modelProvider: InMemoryPlcModelProvider,
+    private readonly runtimeApp: RuntimeApplicationService,
     private readonly ioAdapter: MemoryIOAdapter,
     private readonly options: { port: number }
   ) {
@@ -124,72 +125,143 @@ class RuntimeHostServer {
       return;
     }
 
-    switch (request.method) {
-      case 'ping':
-        this.sendResponse(request.id, { result: 'pong' }, endpoint);
-        break;
-      case 'runtime.start': {
-        const started = this.runtime.start(request.params?.scanTimeMs);
-        this.sendResponse(request.id, { started }, endpoint);
-        break;
-      }
-      case 'runtime.stop': {
-        this.runtime.stop();
-        this.sendResponse(request.id, { stopped: true }, endpoint);
-        break;
-      }
-      case 'runtime.state.get': {
-        const io = this.ioAdapter.getSnapshot();
-        const state = { ...this.runtime.getLastState() };
-        io.inputs.forEach(ch => {
-          state[ch.id] = ch.value;
-        });
-        io.outputs.forEach(ch => {
-          if (typeof state[ch.id] === 'undefined' || typeof state[ch.id] === 'boolean') {
-            state[ch.id] = ch.value;
-          }
-        });
-        this.sendResponse(request.id, { state, io }, endpoint);
-        break;
-      }
-      case 'runtime.variables.list': {
-        const names = new Set(this.runtime.getVariableNames());
-        const ioSnapshot = this.ioAdapter.getSnapshot();
-        ioSnapshot.inputs.forEach(ch => names.add(ch.id));
-        ioSnapshot.outputs.forEach(ch => names.add(ch.id));
-        this.sendResponse(request.id, { variables: Array.from(names).sort() }, endpoint);
-        break;
-      }
-      case 'runtime.writeVar': {
-        const { identifier, value } = request.params ?? {};
-        if (typeof identifier !== 'string') {
-          this.sendError(request.id, 'invalid_params', endpoint);
-          return;
+    try {
+      switch (request.method) {
+        case 'ping':
+          this.sendResponse(request.id, { result: 'pong' }, endpoint);
+          break;
+        case 'runtime.start':
+          this.sendResponse(request.id, this.runtimeApp.start(this.parseScanTimeMs(request.params)), endpoint);
+          break;
+        case 'runtime.stop':
+          this.sendResponse(request.id, this.runtimeApp.stop(), endpoint);
+          break;
+        case 'runtime.step': {
+          const cycles = this.parseCycles(request.params);
+          this.sendResponse(request.id, this.runtimeApp.step(cycles), endpoint);
+          break;
         }
-        this.runtime.writeVariable(identifier, value);
-        this.sendResponse(request.id, { ok: true }, endpoint);
-        break;
+        case 'runtime.reset':
+          this.sendResponse(request.id, this.runtimeApp.reset(), endpoint);
+          break;
+        case 'runtime.state.get':
+          this.sendResponse(request.id, this.runtimeApp.getState({ includeIo: true }), endpoint);
+          break;
+        case 'runtime.variables.list':
+          this.sendResponse(request.id, this.runtimeApp.listVariables(), endpoint);
+          break;
+        case 'runtime.metrics.get':
+          this.sendResponse(request.id, this.runtimeApp.getMetrics(), endpoint);
+          break;
+        case 'runtime.writeVar':
+          this.sendResponse(request.id, this.runtimeApp.writeVariable(this.parseWriteVar(request.params)), endpoint);
+          break;
+        case 'runtime.writeVars':
+          this.sendResponse(request.id, this.runtimeApp.writeVariables(this.parseWriteVars(request.params)), endpoint);
+          break;
+        case 'io.setInput':
+          this.sendResponse(request.id, this.runtimeApp.setInput(this.parseSetInput(request.params)), endpoint);
+          break;
+        case 'io.setInputs':
+          this.sendResponse(request.id, this.runtimeApp.setInputs(this.parseSetInputs(request.params)), endpoint);
+          break;
+        case 'project.load':
+          this.sendResponse(request.id, this.runtimeApp.loadProject(this.parseProjectModel(request.params)), endpoint);
+          break;
+        default:
+          this.sendError(request.id, 'method_not_found', endpoint);
       }
-      case 'io.setInput': {
-        const { identifier, value } = request.params ?? {};
-        if (typeof identifier !== 'string') {
-          this.sendError(request.id, 'invalid_params', endpoint);
-          return;
-        }
-        this.ioAdapter.setInputValue(identifier, Boolean(value));
-        this.sendResponse(request.id, { ok: true }, endpoint);
-        break;
-      }
-      case 'project.load': {
-        const { pous = [], ladder = [] } = request.params ?? {};
-        this.modelProvider.load({ pous, ladder });
-        this.ioAdapter.syncFromLadder(ladder);
-        this.sendResponse(request.id, { loaded: true }, endpoint);
-        break;
-      }
-      default:
-        this.sendError(request.id, 'method_not_found', endpoint);
+    } catch (error) {
+      const code = error instanceof Error && error.message === 'invalid_params' ? 'invalid_params' : 'internal_error';
+      this.sendError(request.id, code, endpoint);
     }
+  }
+
+  private parseScanTimeMs(params: any): number | undefined {
+    if (params?.scanTimeMs === undefined) {
+      return undefined;
+    }
+    const value = Number(params.scanTimeMs);
+    if (!Number.isFinite(value)) {
+      throw new Error('invalid_params');
+    }
+    return value;
+  }
+
+  private parseCycles(params: any): number {
+    if (params?.cycles === undefined) {
+      return 1;
+    }
+    const cycles = Number(params.cycles);
+    if (!Number.isFinite(cycles)) {
+      throw new Error('invalid_params');
+    }
+    return cycles;
+  }
+
+  private parseWriteVar(params: any): RuntimeVariableWrite {
+    if (typeof params?.identifier !== 'string') {
+      throw new Error('invalid_params');
+    }
+    return {
+      identifier: params.identifier,
+      value: params.value
+    };
+  }
+
+  private parseWriteVars(params: any): RuntimeVariableWrite[] {
+    const updates = params?.updates;
+    if (!Array.isArray(updates)) {
+      throw new Error('invalid_params');
+    }
+    return updates.map(update => {
+      if (typeof update?.identifier !== 'string') {
+        throw new Error('invalid_params');
+      }
+      return {
+        identifier: update.identifier,
+        value: update.value
+      };
+    });
+  }
+
+  private parseSetInput(params: any): RuntimeInputWrite {
+    if (typeof params?.identifier !== 'string') {
+      throw new Error('invalid_params');
+    }
+    return {
+      identifier: params.identifier,
+      value: Boolean(params.value)
+    };
+  }
+
+  private parseSetInputs(params: any): RuntimeInputWrite[] {
+    const updates = params?.updates;
+    if (!Array.isArray(updates)) {
+      throw new Error('invalid_params');
+    }
+    return updates.map(update => {
+      if (typeof update?.identifier !== 'string') {
+        throw new Error('invalid_params');
+      }
+      return {
+        identifier: update.identifier,
+        value: Boolean(update.value)
+      };
+    });
+  }
+
+  private parseProjectModel(params: any): { pous: any[]; ladder: any[]; configurations?: any[] } {
+    const pous = params?.pous;
+    const ladder = params?.ladder;
+    const configurations = params?.configurations;
+    if (!Array.isArray(pous) || !Array.isArray(ladder)) {
+      throw new Error('invalid_params');
+    }
+    if (configurations !== undefined && !Array.isArray(configurations)) {
+      throw new Error('invalid_params');
+    }
+    return { pous, ladder, configurations };
   }
 
   private sendResponse(id: number | string | undefined, result: unknown, endpoint: RpcEndpoint): void {
@@ -225,8 +297,9 @@ const runtime = new RuntimeCore({
     process.stderr.write(`${event.level.toUpperCase()} ${event.scope}: ${event.message}\n`);
   }
 });
+const runtimeApp = new RuntimeApplicationService(runtime, modelProvider, ioAdapter);
 
-const server = new RuntimeHostServer(runtime, modelProvider, ioAdapter, {
+const server = new RuntimeHostServer(runtime, runtimeApp, ioAdapter, {
   port: Number.isFinite(port) ? port : defaultPort
 });
 server.start();

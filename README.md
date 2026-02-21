@@ -174,6 +174,21 @@ npm run plcrun -- ping
 
 See `docs/runtime-host-cli.md` for protocol details and examples.
 
+### MCP + REST server
+
+For MCP clients (agents) and HTTP automation, run the FastMCP server:
+
+```bash
+npm run host:mcp
+```
+
+This exposes:
+
+- MCP endpoint: `http://127.0.0.1:8124/mcp`
+- REST API base: `http://127.0.0.1:8124/api/v1`
+
+See `docs/runtime-mcp-rest.md` for available tools, resources, and REST routes.
+
 ---
 
 ## Project Layout 🗂️
@@ -183,6 +198,7 @@ See `docs/runtime-host-cli.md` for protocol details and examples.
 - `src/ladder/ladderPanel.ts` & `media/ladder` – ladder editor webview and SVG rendering.
 - `src/runtime/emulator.ts` – in‑process scan‑cycle emulator.
 - `src/runtime/host/*` – external runtime host and client CLI.
+- `src/runtime/mcp/*` – FastMCP server (MCP + REST API).
 - `src/io/*` – I/O simulation services and webview panels.
 - `src/views/*` – POU tree, runtime controls, project editor, HMI launcher.
 - `src/hmi/*` & `media/hmi-*` – HMI designer and runtime.

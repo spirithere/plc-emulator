@@ -1,9 +1,10 @@
-import { LadderElement, LadderRung, StructuredTextBlock } from '../../types';
-import { DisposableLike, PlcModelProvider, RuntimeIOAdapter } from '../runtimeTypes';
+import { Configuration, LadderElement, LadderRung, StructuredTextBlock } from '../../types';
+import { DisposableLike, MutablePlcModelProvider, RuntimeIOAdapter, RuntimeProjectModel } from '../runtimeTypes';
 
-export class InMemoryPlcModelProvider implements PlcModelProvider {
+export class InMemoryPlcModelProvider implements MutablePlcModelProvider {
   private pous: StructuredTextBlock[] = [];
   private ladder: LadderRung[] = [];
+  private configurations: Configuration[] = [];
   private readonly listeners = new Set<() => void>();
 
   public getStructuredTextBlocks(): StructuredTextBlock[] {
@@ -14,8 +15,8 @@ export class InMemoryPlcModelProvider implements PlcModelProvider {
     return this.ladder;
   }
 
-  public getConfigurations(): undefined {
-    return undefined;
+  public getConfigurations(): Configuration[] {
+    return this.configurations;
   }
 
   public onDidChangeModel(listener: () => void): DisposableLike {
@@ -25,10 +26,15 @@ export class InMemoryPlcModelProvider implements PlcModelProvider {
     };
   }
 
-  public load(model: { pous: StructuredTextBlock[]; ladder: LadderRung[] }): void {
+  public load(model: RuntimeProjectModel): void {
     this.pous = model.pous;
     this.ladder = model.ladder;
+    this.configurations = model.configurations ?? [];
     this.listeners.forEach(listener => listener());
+  }
+
+  public loadModel(model: RuntimeProjectModel): void {
+    this.load(model);
   }
 }
 

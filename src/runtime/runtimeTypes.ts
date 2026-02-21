@@ -4,11 +4,24 @@ export interface DisposableLike {
   dispose(): void;
 }
 
+export type RuntimeValue = number | boolean | string;
+
+export interface RuntimeProjectModel {
+  pous: StructuredTextBlock[];
+  ladder: LadderRung[];
+  configurations?: Configuration[];
+}
+
 export interface PlcModelProvider {
   getStructuredTextBlocks(): StructuredTextBlock[];
   getLadderRungs(): LadderRung[];
   getConfigurations(): Configuration[] | undefined;
   onDidChangeModel(listener: () => void): DisposableLike;
+}
+
+export interface MutablePlcModelProvider extends PlcModelProvider {
+  load?(model: RuntimeProjectModel): void;
+  loadModel?(model: RuntimeProjectModel): void;
 }
 
 export interface RuntimeIOAdapter {
@@ -17,12 +30,22 @@ export interface RuntimeIOAdapter {
   setOutputValue(identifier: string, value: boolean): void;
 }
 
-export type RuntimeState = Record<string, number | boolean | string>;
+export type RuntimeState = Record<string, RuntimeValue>;
 
 export interface RuntimeStateEvent {
   sequence: number;
   timestamp: number;
   snapshot: RuntimeState;
+}
+
+export interface RuntimeMetrics {
+  running: boolean;
+  currentScanTimeMs: number;
+  sequence: number;
+  totalScans: number;
+  lastScanDurationMs: number;
+  lastScanTimestamp?: number;
+  scanErrorCount: number;
 }
 
 export type RuntimeStateListener = (event: RuntimeStateEvent) => void;

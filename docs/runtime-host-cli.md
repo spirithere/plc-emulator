@@ -2,6 +2,8 @@
 
 外部バックエンドモード（`plcEmu.runtimeMode = "external"`）では、VS Code 拡張とは別プロセスで IEC スキャンを実行する **Runtime Host CLI** が利用されます。このドキュメントでは、CLI の起動方法と JSON-RPC コマンド仕様をまとめます。
 
+> MCP / REST でランタイムを操作したい場合は `docs/runtime-mcp-rest.md` を参照してください（`npm run host:mcp`）。
+
 ## 1. 起動方法
 
 ```bash
@@ -30,10 +32,15 @@ npm run host -- --port=8123   # Runtime Host CLI を起動（ポート指定可�
 | `project.load` | ST/ラダーのモデルを丸ごと送信。拡張側は PLCopen Service から作った JSON を流用します。| `{ "pous": [...], "ladder": [...] }` |
 | `runtime.start` | スキャン開始 | `{ "scanTimeMs": 100 }` |
 | `runtime.stop` | スキャン停止 | `{}` |
+| `runtime.step` | 停止中に指定回数だけスキャンを実行 | `{ "cycles": 1 }` |
+| `runtime.reset` | STOP にしてメモリ/シーケンス/メトリクスをリセット | `{}` |
 | `runtime.state.get` | 直近スキャンのスナップショットを同期取得 | `{}` |
+| `runtime.metrics.get` | スキャン回数・最終スキャン時間などの実行メトリクスを取得 | `{}` |
 | `runtime.variables.list` | 変数名一覧を取得 | `{}` |
 | `runtime.writeVar` | 任意変数に値を書き込み | `{ "identifier": "M0", "value": true }` |
+| `runtime.writeVars` | 複数変数を一括で書き込み | `{ "updates": [{ "identifier": "M0", "value": true }] }` |
 | `io.setInput` | シミュレート入力を変更 | `{ "identifier": "X0", "value": false }` |
+| `io.setInputs` | 複数入力を一括で変更 | `{ "updates": [{ "identifier": "X0", "value": false }] }` |
 
 レスポンスは `{"jsonrpc":"2.0","id":<同じID>,"result":...}` 形式です。エラー時は `error.code` に `invalid_params`, `method_not_found` などが返ります。
 
@@ -67,7 +74,10 @@ npm run host -- --port=8123   # Runtime Host CLI を起動（ポート指定可�
 ```bash
 npm run plcrun -- ping                  # 生存確認
 npm run plcrun -- start 50              # 50ms スキャンで開始
+npm run plcrun -- step 1                # 停止中に 1 スキャンだけ実行
 npm run plcrun -- state                 # 直近スナップショット取得
+npm run plcrun -- metrics               # 実行メトリクス取得
+npm run plcrun -- reset                 # Runtime リセット
 npm run plcrun -- write M0 true         # 変数書き込み
 npm run plcrun -- rpc runtime.stop      # 任意の method を直接指定
 ```
