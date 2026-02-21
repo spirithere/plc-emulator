@@ -110,4 +110,18 @@ describe('PLCopenService external CODESYS fixtures', () => {
     expect(taskNames).toContain('MainTask');
     expect(taskNames).toContain('VISU_TASK');
   });
+
+  it('extracts task-bound CODESYS pouInstance program entries', () => {
+    const xml = readFileSync(resolve(fixtureDir, 'refrigerator-control.xml'), 'utf8');
+    const service = new PLCopenService();
+
+    service.loadFromText(xml);
+    const programs = service.getModel().configurations?.[0]?.resources?.[0]?.programs ?? [];
+
+    expect(programs.map(program => program.name)).toContain('PLC_PRG');
+    expect(programs.map(program => program.name)).toContain('Simulation');
+    expect(programs.map(program => program.name)).toContain('VisuElems.Visu_Prg');
+    expect(programs.find(program => program.name === 'PLC_PRG')?.taskName).toBe('MainTask');
+    expect(programs.find(program => program.name === 'VisuElems.Visu_Prg')?.taskName).toBe('VISU_TASK');
+  });
 });
