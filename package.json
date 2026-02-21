@@ -324,6 +324,7 @@
   "scripts": {
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
+    "verify": "npm run compile && npm test",
     "vscode:prepublish": "npm run compile",
     "package": "npm run compile && npx @vscode/vsce package",
     "test": "vitest run",

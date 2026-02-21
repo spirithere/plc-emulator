@@ -9,8 +9,7 @@
 ## Local Setup
 ```bash
 npm install
-npm run compile
-npm test
+npm run verify
 ```
 
 ## Branching and Commit Flow
@@ -26,8 +25,7 @@ git commit -m "feat(scope): short description"
 ```
 4. Re-run quality checks:
 ```bash
-npm run compile
-npm test
+npm run verify
 ```
 5. Push your branch:
 ```bash

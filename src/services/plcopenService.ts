@@ -296,7 +296,7 @@ export class PLCopenService implements vscode.Disposable {
   private extractInterface(node: any): PouInterface | undefined {
     if (!node) return undefined;
     const mapVars = (section: any): VariableDeclaration[] | undefined =>
-      ensureArray(section?.variable)?.map((v: any) => this.extractVar(v));
+      ensureArray(section?.variable)?.map((v: any) => this.toVariableDeclaration(v));
     const interfaceObj: PouInterface = {
       inputVars: mapVars(node.inputVars),
       outputVars: mapVars(node.outputVars),
@@ -307,7 +307,7 @@ export class PLCopenService implements vscode.Disposable {
     return Object.values(interfaceObj).some(arr => (arr?.length ?? 0) > 0) ? interfaceObj : undefined;
   }
 
-  private extractVar(variable: any): VariableDeclaration {
+  private toVariableDeclaration(variable: any): VariableDeclaration {
     const name = this.readAttr(variable, 'name') ?? variable?.name ?? 'Var';
     const dataType = this.resolveDataType(variable?.type);
     const address = this.readAttr(variable, 'address');
@@ -455,12 +455,16 @@ export class PLCopenService implements vscode.Disposable {
       name: this.readAttr(config, 'name') ?? `Config${idx}`,
       globalVars: this.extractVariables(ensureArray(config?.globalVars?.variable)),
       resources:
-        ensureArray(config?.resource)?.map((resource: any, resourceIndex: number) => ({
-          name: this.readAttr(resource, 'name') ?? `Resource${resourceIndex}`,
-          tasks: this.extractTasks(ensureArray(resource?.task)),
-          programs: this.extractPrograms(ensureArray(resource?.program)),
-          globalVars: this.extractVariables(ensureArray(resource?.globalVars?.variable))
-        })) ?? []
+        ensureArray(config?.resource)?.map((resource: any, resourceIndex: number) => {
+          const taskNodes = ensureArray(resource?.task);
+          return {
+            name: this.readAttr(resource, 'name') ?? `Resource${resourceIndex}`,
+            tasks: this.extractTasks(taskNodes),
+            // CODESYS commonly embeds program instances under task.pouInstance.
+            programs: this.extractPrograms(ensureArray(resource?.program), taskNodes),
+            globalVars: this.extractVariables(ensureArray(resource?.globalVars?.variable))
+          };
+        }) ?? []
     }));
   }
 
@@ -475,49 +479,44 @@ export class PLCopenService implements vscode.Disposable {
     );
   }
 
-  private extractPrograms(nodes: any[] | undefined): any[] {
-    return (
-      nodes?.map((program: any, index: number) => ({
+  private extractPrograms(resourceProgramNodes: any[] | undefined, taskNodes: any[] | undefined): any[] {
+    const programs =
+      resourceProgramNodes?.map((program: any, index: number) => ({
         name: this.readAttr(program, 'name') ?? `Program${index}`,
         typeName: this.readAttr(program, 'typeName') ?? this.readAttr(program, 'type') ?? 'MainProgram',
         taskName: this.readAttr(program, 'taskName') ?? this.readAttr(program, 'task')
-      })) ?? []
-    );
+      })) ?? [];
+
+    taskNodes?.forEach((task: any, taskIndex: number) => {
+      const taskName = this.readAttr(task, 'name') ?? `Task${taskIndex}`;
+      ensureArray(task?.pouInstance)?.forEach((instance: any, instanceIndex: number) => {
+        const name = this.readAttr(instance, 'name') ?? `Program_${taskIndex}_${instanceIndex}`;
+        programs.push({
+          name,
+          typeName: this.readAttr(instance, 'typeName') ?? this.readAttr(instance, 'type') ?? name ?? 'MainProgram',
+          taskName
+        });
+      });
+    });
+
+    const deduped: any[] = [];
+    const seen = new Set<string>();
+    programs.forEach(program => {
+      const key = `${program.name}::${program.taskName ?? ''}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        deduped.push(program);
+      }
+    });
+
+    return deduped;
   }
 
   private extractVariables(nodes: any[] | undefined): VariableDeclaration[] | undefined {
     if (!nodes) {
       return undefined;
     }
-    return nodes.map((variable: any) => {
-      const name = this.readAttr(variable, 'name') ?? variable?.name ?? 'Var';
-      const dataType = this.resolveDataType(variable?.type);
-      const address = this.readAttr(variable, 'address');
-      const constant = this.readAttr(variable, 'constant') === 'true';
-      const retain = this.readAttr(variable, 'retain') === 'true';
-      const persistent = this.readAttr(variable, 'persistent') === 'true';
-      const opcUaNodeId =
-        this.readAttr(variable, 'plcemu:opcUaNodeId') ??
-        this.readAttr(variable, 'opcUaNodeId') ??
-        variable?.['plcemu:opcUaNodeId'];
-    const initialSimple =
-        variable?.initialValue?.simpleValue?.value ??
-        variable?.initialValue?.simpleValue?.['@_value'] ??
-        variable?.initialValue?.simpleValue ??
-        variable?.initialValue?.['@_value'];
-      return {
-        name,
-        dataType,
-        address,
-        constant,
-        retain,
-        persistent,
-        documentation: variable?.documentation,
-        initialValue: this.parseSimpleValue(initialSimple),
-        ioDirection: this.inferIoDirection(address),
-        opcUaNodeId
-      } as VariableDeclaration;
-    });
+    return nodes.map((variable: any) => this.toVariableDeclaration(variable));
   }
 
   private readAttr(node: any, key: string): any {

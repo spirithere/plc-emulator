@@ -12,6 +12,7 @@
 - `npm run compile` - strict TypeScript build to `out/`; required before packaging/host runs.
 - `npm run watch` - incremental rebuild while developing.
 - `npm test` - Vitest suite (unit + light integration).
+- `npm run verify` - canonical local quality gate (`compile` + `test`).
 - `npm run host` - start the external runtime host for `plcEmu.runtimeMode: "external"`.
 - `npm run plcrun -- <cmd>` - send ad-hoc JSON-RPC to a running host.
 - Debugging: open in VS Code and press `F5` to launch the Extension Development Host.
@@ -26,7 +27,7 @@
 - Tests are `*.test.ts` mirroring source areas (for example `test/plcopenService.test.ts`).
 - Use or extend `test/fixtures/` for PLCopen/HMI samples; keep fixtures minimal and representative.
 - For runtime/host flows, avoid timers when possible; stub VS Code APIs via `test/vscodeMock.ts`.
-- Run `npm run compile` and `npm test` before pushing.
+- Run `npm run verify` before pushing.
 - Remove temporary `it.only` / `vi.only` before commit.
 
 ## Git Branching & Commit Rules
@@ -56,7 +57,7 @@
 
 ## Pull Request Expectations
 - Summarize behavior changes and operational impact.
-- List verification commands that were run (`npm run compile`, `npm test`, and relevant manual checks).
+- List verification commands that were run (`npm run verify`, and relevant manual checks).
 - Attach screenshots/gifs for UI/webview changes.
 - Link related issues and note configuration changes (`plcEmu.*`).
 - Keep PRs reviewable; split very large work into multiple PRs when possible.
