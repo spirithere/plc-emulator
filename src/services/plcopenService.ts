@@ -72,10 +72,12 @@ export class PLCopenService implements vscode.Disposable {
     const potential = vscode.Uri.joinPath(workspaceFolder.uri, configured);
     try {
       await vscode.workspace.fs.stat(potential);
-      await this.loadFromUri(potential);
     } catch {
       // Keep default in-memory model if file is missing.
+      return;
     }
+
+    await this.loadFromUri(potential);
   }
 
   public async loadFromUri(uri: vscode.Uri): Promise<void> {
@@ -85,7 +87,8 @@ export class PLCopenService implements vscode.Disposable {
       await this.loadUriIntoModel(uri);
     } catch (error) {
       console.error('Failed to load PLC project from disk', error);
-      void vscode.window.showErrorMessage('Failed to load PLC project. Check that the XML is valid.');
+      const detail = error instanceof Error ? ` ${error.message}` : '';
+      void vscode.window.showErrorMessage(`Failed to load PLC project.${detail}`);
       throw error;
     }
 
@@ -119,7 +122,9 @@ export class PLCopenService implements vscode.Disposable {
 
   public loadFromText(xml: string): void {
     const ast = this.parser.parse(xml);
-    this.model = this.inflateModel(ast);
+    const inflated = this.inflateModel(ast);
+    this.validateLoadedModel(inflated);
+    this.model = inflated;
     this.changeEmitter.fire(this.model);
   }
 
@@ -266,9 +271,9 @@ export class PLCopenService implements vscode.Disposable {
   }
 
   private extractPous(ast: any): StructuredTextBlock[] {
-    const pouNodes = ensureArray(ast?.project?.types?.pous?.pou) ?? ensureArray(ast?.project?.pous?.pou);
-    if (!pouNodes) {
-      return this.createDefaultModel().pous;
+    const pouNodes = this.extractAllPouNodes(ast);
+    if (!pouNodes.length) {
+      return [];
     }
 
     // Ignore ladder-only POUs so we don't mirror them as empty ST blocks and create
@@ -277,7 +282,7 @@ export class PLCopenService implements vscode.Disposable {
 
     return stPous.map((pou: any) => {
       const name = pou?.name ?? pou?.['@_name'] ?? 'UnnamedPOU';
-      const bodySt = typeof pou?.body?.ST === 'string' ? pou.body.ST : pou?.body?.st ?? '';
+      const bodySt = this.extractStructuredTextBody(pou);
       const interfaceSection = this.extractInterface(pou?.interface);
       return {
         name,
@@ -338,15 +343,20 @@ export class PLCopenService implements vscode.Disposable {
   }
 
   private extractLadder(ast: any): LadderRung[] {
-    const ldPous = ensureArray(ast?.project?.types?.pous?.pou)?.filter((p: any) => p?.body?.LD || p?.body?.ld);
+    const ldPous = this.extractAllPouNodes(ast).filter((p: any) => p?.body?.LD || p?.body?.ld);
     if (ldPous && ldPous.length > 0) {
       const fromLd: LadderRung[] = [];
       ldPous.forEach((pou: any, pouIndex: number) => {
         const ldBody = pou.body?.LD ?? pou.body?.ld;
         const networks = ensureArray(ldBody?.network);
-        networks?.forEach((net: any, netIndex: number) => {
-          fromLd.push(this.parseLdNetwork(net, `${pou?.name ?? 'LD'}_${netIndex ?? pouIndex}`));
-        });
+        if (networks && networks.length > 0) {
+          networks.forEach((net: any, netIndex: number) => {
+            fromLd.push(this.parseLdNetwork(net, `${pou?.name ?? 'LD'}_${netIndex ?? pouIndex}`));
+          });
+        } else if (ldBody) {
+          // CODESYS LD can store elements directly under <LD> without <network>.
+          fromLd.push(this.parseLdNetwork(ldBody, `${pou?.name ?? 'LD'}_0`));
+        }
       });
       if (fromLd.length > 0) {
         return fromLd;
@@ -355,7 +365,7 @@ export class PLCopenService implements vscode.Disposable {
 
     const rungNodes = ensureArray(ast?.project?.ladder?.rung);
     if (!rungNodes) {
-      return this.createDefaultModel().ladder;
+      return [];
     }
 
     return rungNodes.map((r: any, index: number) => ({
@@ -449,7 +459,7 @@ export class PLCopenService implements vscode.Disposable {
   private extractConfigurations(ast: any): Configuration[] | undefined {
     const configurations = ensureArray(ast?.project?.instances?.configurations?.configuration);
     if (!configurations) {
-      return this.createDefaultModel().configurations;
+      return undefined;
     }
     return configurations.map((config: any, idx: number) => ({
       name: this.readAttr(config, 'name') ?? `Config${idx}`,
@@ -481,19 +491,22 @@ export class PLCopenService implements vscode.Disposable {
 
   private extractPrograms(resourceProgramNodes: any[] | undefined, taskNodes: any[] | undefined): any[] {
     const programs =
-      resourceProgramNodes?.map((program: any, index: number) => ({
-        name: this.readAttr(program, 'name') ?? `Program${index}`,
-        typeName: this.readAttr(program, 'typeName') ?? this.readAttr(program, 'type') ?? 'MainProgram',
-        taskName: this.readAttr(program, 'taskName') ?? this.readAttr(program, 'task')
-      })) ?? [];
+      resourceProgramNodes?.map((program: any, index: number) => {
+        const name = this.firstNonEmpty(this.readAttr(program, 'name'), `Program${index}`);
+        return {
+          name,
+          typeName: this.firstNonEmpty(this.readAttr(program, 'typeName'), this.readAttr(program, 'type'), name, 'MainProgram'),
+          taskName: this.firstNonEmpty(this.readAttr(program, 'taskName'), this.readAttr(program, 'task'))
+        };
+      }) ?? [];
 
     taskNodes?.forEach((task: any, taskIndex: number) => {
-      const taskName = this.readAttr(task, 'name') ?? `Task${taskIndex}`;
+      const taskName = this.firstNonEmpty(this.readAttr(task, 'name'), `Task${taskIndex}`);
       ensureArray(task?.pouInstance)?.forEach((instance: any, instanceIndex: number) => {
-        const name = this.readAttr(instance, 'name') ?? `Program_${taskIndex}_${instanceIndex}`;
+        const name = this.firstNonEmpty(this.readAttr(instance, 'name'), `Program_${taskIndex}_${instanceIndex}`);
         programs.push({
           name,
-          typeName: this.readAttr(instance, 'typeName') ?? this.readAttr(instance, 'type') ?? name ?? 'MainProgram',
+          typeName: this.firstNonEmpty(this.readAttr(instance, 'typeName'), this.readAttr(instance, 'type'), name, 'MainProgram'),
           taskName
         });
       });
@@ -523,6 +536,21 @@ export class PLCopenService implements vscode.Disposable {
     return node?.[key] ?? node?.[`@_${key}`] ?? node?.[`_${key}`];
   }
 
+  private firstNonEmpty(...values: unknown[]): string {
+    for (const value of values) {
+      if (typeof value === 'string') {
+        if (value.trim().length > 0) {
+          return value.trim();
+        }
+        continue;
+      }
+      if (value !== undefined && value !== null) {
+        return String(value);
+      }
+    }
+    return '';
+  }
+
   private inferIoDirection(address?: string): 'input' | 'output' | 'memory' | undefined {
     if (!address) return undefined;
     const normalized = address.trim().toUpperCase();
@@ -545,6 +573,67 @@ export class PLCopenService implements vscode.Disposable {
       return num;
     }
     return text;
+  }
+
+  private extractStructuredTextBody(pou: any): string {
+    const stNode = pou?.body?.ST ?? pou?.body?.st;
+    if (typeof stNode === 'string') {
+      return stNode;
+    }
+    if (!stNode || typeof stNode !== 'object') {
+      return '';
+    }
+
+    const fromXhtml = stNode?.xhtml;
+    if (typeof fromXhtml === 'string') {
+      return fromXhtml;
+    }
+    if (fromXhtml && typeof fromXhtml === 'object') {
+      const text = fromXhtml?.['#text'] ?? fromXhtml?.__text;
+      if (typeof text === 'string') {
+        return text;
+      }
+    }
+
+    const directText = stNode?.['#text'] ?? stNode?.__text;
+    if (typeof directText === 'string') {
+      return directText;
+    }
+
+    return '';
+  }
+
+  private extractAllPouNodes(ast: any): any[] {
+    const direct = ensureArray(ast?.project?.types?.pous?.pou) ?? ensureArray(ast?.project?.pous?.pou) ?? [];
+    const embedded = this.extractEmbeddedPouNodes(ast);
+    if (!direct.length && !embedded.length) {
+      return [];
+    }
+
+    const all = [...direct, ...embedded];
+    const deduped: any[] = [];
+    const seen = new Set<string>();
+    all.forEach((pou: any, index: number) => {
+      const key = `${pou?.name ?? pou?.['@_name'] ?? `pou_${index}`}::${pou?.pouType ?? pou?.['@_pouType'] ?? ''}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        deduped.push(pou);
+      }
+    });
+    return deduped;
+  }
+
+  private extractEmbeddedPouNodes(ast: any): any[] {
+    const result: any[] = [];
+    const configurations = ensureArray(ast?.project?.instances?.configurations?.configuration);
+    configurations?.forEach((config: any) => {
+      ensureArray(config?.resource)?.forEach((resource: any) => {
+        ensureArray(resource?.addData?.data)?.forEach((dataNode: any) => {
+          ensureArray(dataNode?.pou)?.forEach((pou: any) => result.push(pou));
+        });
+      });
+    });
+    return result;
   }
 
   private resolveDataType(typeNode: any): string {
@@ -961,6 +1050,19 @@ export class PLCopenService implements vscode.Disposable {
       this.model = this.createDefaultModel();
       this.changeEmitter.fire(this.model);
     });
+  }
+
+  private validateLoadedModel(model: PLCProjectModel): void {
+    const hasPous = model.pous.length > 0;
+    const hasLadder = model.ladder.length > 0;
+    const hasProgramBindings =
+      model.configurations?.some(configuration =>
+        configuration.resources.some(resource => (resource.programs?.length ?? 0) > 0)
+      ) ?? false;
+
+    if (!hasPous && !hasLadder && !hasProgramBindings) {
+      throw new Error('No POUs, ladder networks, or program bindings were found in the PLCopen XML.');
+    }
   }
 
   private createDefaultModel(): PLCProjectModel {

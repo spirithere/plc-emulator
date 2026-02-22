@@ -51,9 +51,10 @@ const cases: FixtureCase[] = [
   {
     file: 'refrigerator-control.xml',
     productNameToken: 'CODESYS',
-    minPous: 1,
+    minPous: 2,
     minConfigurations: 1,
-    minTasks: 2
+    minTasks: 2,
+    expectedPouNames: ['PLC_PRG', 'Simulation']
   }
 ];
 
@@ -82,6 +83,10 @@ describe('PLCopenService external CODESYS fixtures', () => {
     fixture.expectedPouNames?.forEach(name => {
       expect(model.pous.map(p => p.name)).toContain(name);
     });
+
+    if (fixture.file === 'refrigerator-control.xml') {
+      expect(model.pous.map(p => p.name)).not.toContain('MainProgram');
+    }
   });
 
   it.each(cases)('round-trips $file through exportToXml/loadFromText', fixture => {
