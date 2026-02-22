@@ -47,14 +47,6 @@ const cases: FixtureCase[] = [
     minConfigurations: 0,
     minTasks: 0,
     expectedPouNames: ['Main', 'Helper', 'LegacyDb']
-  },
-  {
-    file: 'refrigerator-control.xml',
-    productNameToken: 'CODESYS',
-    minPous: 2,
-    minConfigurations: 1,
-    minTasks: 2,
-    expectedPouNames: ['PLC_PRG', 'Simulation']
   }
 ];
 
@@ -84,9 +76,6 @@ describe('PLCopenService external CODESYS fixtures', () => {
       expect(model.pous.map(p => p.name)).toContain(name);
     });
 
-    if (fixture.file === 'refrigerator-control.xml') {
-      expect(model.pous.map(p => p.name)).not.toContain('MainProgram');
-    }
   });
 
   it.each(cases)('round-trips $file through exportToXml/loadFromText', fixture => {
@@ -104,29 +93,10 @@ describe('PLCopenService external CODESYS fixtures', () => {
     expect(roundTrip.getModel().pous.length).toBeGreaterThanOrEqual(1);
   });
 
-  it('extracts CODESYS task definitions from refrigerator-control fixture', () => {
+  it('throws clear error for unsupported CFC/advanced LD in refrigerator-control fixture', () => {
     const xml = readFileSync(resolve(fixtureDir, 'refrigerator-control.xml'), 'utf8');
     const service = new PLCopenService();
 
-    service.loadFromText(xml);
-    const resources = service.getModel().configurations?.[0]?.resources ?? [];
-    const taskNames = resources.flatMap(resource => resource.tasks.map(task => task.name));
-
-    expect(taskNames).toContain('MainTask');
-    expect(taskNames).toContain('VISU_TASK');
-  });
-
-  it('extracts task-bound CODESYS pouInstance program entries', () => {
-    const xml = readFileSync(resolve(fixtureDir, 'refrigerator-control.xml'), 'utf8');
-    const service = new PLCopenService();
-
-    service.loadFromText(xml);
-    const programs = service.getModel().configurations?.[0]?.resources?.[0]?.programs ?? [];
-
-    expect(programs.map(program => program.name)).toContain('PLC_PRG');
-    expect(programs.map(program => program.name)).toContain('Simulation');
-    expect(programs.map(program => program.name)).toContain('VisuElems.Visu_Prg');
-    expect(programs.find(program => program.name === 'PLC_PRG')?.taskName).toBe('MainTask');
-    expect(programs.find(program => program.name === 'VisuElems.Visu_Prg')?.taskName).toBe('VISU_TASK');
+    expect(() => service.loadFromText(xml)).toThrow('uses CFC implementation, which is not supported yet');
   });
 });

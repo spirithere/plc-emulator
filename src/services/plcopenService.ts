@@ -283,6 +283,9 @@ export class PLCopenService implements vscode.Disposable {
     return stPous.map((pou: any) => {
       const name = pou?.name ?? pou?.['@_name'] ?? 'UnnamedPOU';
       const bodySt = this.extractStructuredTextBody(pou);
+      if (this.hasUnsupportedCfcBody(pou) && bodySt.trim().length === 0) {
+        throw new Error(`POU "${name}" uses CFC implementation, which is not supported yet.`);
+      }
       const interfaceSection = this.extractInterface(pou?.interface);
       return {
         name,
@@ -347,7 +350,14 @@ export class PLCopenService implements vscode.Disposable {
     if (ldPous && ldPous.length > 0) {
       const fromLd: LadderRung[] = [];
       ldPous.forEach((pou: any, pouIndex: number) => {
+        const pouName = pou?.name ?? pou?.['@_name'] ?? `LD_${pouIndex}`;
         const ldBody = pou.body?.LD ?? pou.body?.ld;
+        const unsupportedElements = this.getUnsupportedLdElements(ldBody);
+        if (unsupportedElements.length > 0) {
+          throw new Error(
+            `POU "${pouName}" contains unsupported LD elements: ${unsupportedElements.join(', ')}.`
+          );
+        }
         const networks = ensureArray(ldBody?.network);
         if (networks && networks.length > 0) {
           networks.forEach((net: any, netIndex: number) => {
@@ -634,6 +644,72 @@ export class PLCopenService implements vscode.Disposable {
       });
     });
     return result;
+  }
+
+  private hasUnsupportedCfcBody(pou: any): boolean {
+    const body = pou?.body;
+    if (!body) {
+      return false;
+    }
+    const dataNodes = ensureArray(body?.addData?.data);
+    return (
+      dataNodes?.some((dataNode: any) => {
+        const name = this.readAttr(dataNode, 'name');
+        if (typeof name === 'string' && name.toLowerCase().includes('cfc')) {
+          return true;
+        }
+        return Boolean(dataNode?.CFC ?? dataNode?.cfc);
+      }) ?? false
+    );
+  }
+
+  private getUnsupportedLdElements(ldBody: any): string[] {
+    if (!ldBody || typeof ldBody !== 'object') {
+      return [];
+    }
+    const supported = new Set([
+      'network',
+      'contact',
+      'coil',
+      'parallel',
+      'powerRail',
+      'leftPowerRail',
+      'rightPowerRail',
+      'comment',
+      'vendorElement',
+      'addData'
+    ]);
+    const ignored = new Set(['#text', '__text']);
+    const found = new Set<string>();
+
+    const visit = (node: any): void => {
+      if (!node || typeof node !== 'object') {
+        return;
+      }
+      Object.keys(node).forEach(key => {
+        if (key.startsWith('@_') || ignored.has(key)) {
+          return;
+        }
+        const value = node[key];
+        // With parser attributeNamePrefix="", XML attributes appear as scalar keys.
+        // We only validate element-like keys (object/array), not scalar attributes.
+        if (value === null || value === undefined || typeof value !== 'object') {
+          return;
+        }
+        if (!supported.has(key)) {
+          found.add(key);
+        }
+      });
+      const networks = ensureArray(node?.network);
+      networks?.forEach(network => visit(network));
+      const parallels = ensureArray(node?.parallel);
+      parallels?.forEach(parallel => {
+        ensureArray(parallel?.branch)?.forEach(branch => visit(branch));
+      });
+    };
+
+    visit(ldBody);
+    return Array.from(found).sort();
   }
 
   private resolveDataType(typeNode: any): string {
