@@ -531,21 +531,52 @@ export class PLCopenService implements vscode.Disposable {
     if (!configurations) {
       return undefined;
     }
-    return configurations.map((config: any, idx: number) => ({
-      name: this.readAttr(config, 'name') ?? `Config${idx}`,
-      globalVars: this.extractVariables(ensureArray(config?.globalVars?.variable)),
-      resources:
+    return configurations.map((config: any, idx: number) => {
+      const configName = this.readAttr(config, 'name') ?? `Config${idx}`;
+      const configTaskNodes = ensureArray(config?.task);
+      const configPrograms = this.extractPrograms(
+        ensureArray(config?.program),
+        configTaskNodes,
+        ensureArray(config?.pouInstance)
+      );
+      const configTasks = this.extractTasks(configTaskNodes);
+
+      const resources =
         ensureArray(config?.resource)?.map((resource: any, resourceIndex: number) => {
           const taskNodes = ensureArray(resource?.task);
           return {
             name: this.readAttr(resource, 'name') ?? `Resource${resourceIndex}`,
             tasks: this.extractTasks(taskNodes),
-            // CODESYS commonly embeds program instances under task.pouInstance.
-            programs: this.extractPrograms(ensureArray(resource?.program), taskNodes),
+            programs: this.extractPrograms(
+              ensureArray(resource?.program),
+              taskNodes,
+              ensureArray(resource?.pouInstance)
+            ),
             globalVars: this.extractVariables(ensureArray(resource?.globalVars?.variable))
           };
-        }) ?? []
-    }));
+        }) ?? [];
+
+      if (configTasks.length > 0 || configPrograms.length > 0) {
+        if (resources.length > 0) {
+          const first = resources[0];
+          first.tasks = this.mergeTasks(first.tasks, configTasks);
+          first.programs = this.mergePrograms(first.programs, configPrograms);
+        } else {
+          resources.push({
+            name: `${configName}_resource`,
+            tasks: configTasks,
+            programs: configPrograms,
+            globalVars: undefined
+          });
+        }
+      }
+
+      return {
+        name: configName,
+        globalVars: this.extractVariables(ensureArray(config?.globalVars?.variable)),
+        resources
+      };
+    });
   }
 
   private extractTasks(nodes: any[] | undefined): any[] {
@@ -559,7 +590,11 @@ export class PLCopenService implements vscode.Disposable {
     );
   }
 
-  private extractPrograms(resourceProgramNodes: any[] | undefined, taskNodes: any[] | undefined): any[] {
+  private extractPrograms(
+    resourceProgramNodes: any[] | undefined,
+    taskNodes: any[] | undefined,
+    pouInstances: any[] | undefined
+  ): any[] {
     const programs =
       resourceProgramNodes?.map((program: any, index: number) => {
         const name = this.firstNonEmpty(this.readAttr(program, 'name'), `Program${index}`);
@@ -572,6 +607,14 @@ export class PLCopenService implements vscode.Disposable {
 
     taskNodes?.forEach((task: any, taskIndex: number) => {
       const taskName = this.firstNonEmpty(this.readAttr(task, 'name'), `Task${taskIndex}`);
+      ensureArray(task?.program)?.forEach((program: any, programIndex: number) => {
+        const name = this.firstNonEmpty(this.readAttr(program, 'name'), `Program_${taskIndex}_${programIndex}`);
+        programs.push({
+          name,
+          typeName: this.firstNonEmpty(this.readAttr(program, 'typeName'), this.readAttr(program, 'type'), name, 'MainProgram'),
+          taskName
+        });
+      });
       ensureArray(task?.pouInstance)?.forEach((instance: any, instanceIndex: number) => {
         const name = this.firstNonEmpty(this.readAttr(instance, 'name'), `Program_${taskIndex}_${instanceIndex}`);
         programs.push({
@@ -579,6 +622,15 @@ export class PLCopenService implements vscode.Disposable {
           typeName: this.firstNonEmpty(this.readAttr(instance, 'typeName'), this.readAttr(instance, 'type'), name, 'MainProgram'),
           taskName
         });
+      });
+    });
+
+    pouInstances?.forEach((instance: any, index: number) => {
+      const name = this.firstNonEmpty(this.readAttr(instance, 'name'), `Program_instance_${index}`);
+      programs.push({
+        name,
+        typeName: this.firstNonEmpty(this.readAttr(instance, 'typeName'), this.readAttr(instance, 'type'), name, 'MainProgram'),
+        taskName: this.firstNonEmpty(this.readAttr(instance, 'taskName'), this.readAttr(instance, 'task'))
       });
     });
 
@@ -593,6 +645,37 @@ export class PLCopenService implements vscode.Disposable {
     });
 
     return deduped;
+  }
+
+  private mergeTasks(baseTasks: any[], extraTasks: any[]): any[] {
+    if (extraTasks.length === 0) {
+      return baseTasks;
+    }
+    const merged = [...baseTasks];
+    const seen = new Set(merged.map(task => task.name));
+    extraTasks.forEach(task => {
+      if (!seen.has(task.name)) {
+        merged.push(task);
+        seen.add(task.name);
+      }
+    });
+    return merged;
+  }
+
+  private mergePrograms(basePrograms: any[], extraPrograms: any[]): any[] {
+    if (extraPrograms.length === 0) {
+      return basePrograms;
+    }
+    const merged = [...basePrograms];
+    const seen = new Set(merged.map(program => `${program.name}::${program.taskName ?? ''}`));
+    extraPrograms.forEach(program => {
+      const key = `${program.name}::${program.taskName ?? ''}`;
+      if (!seen.has(key)) {
+        merged.push(program);
+        seen.add(key);
+      }
+    });
+    return merged;
   }
 
   private extractVariables(nodes: any[] | undefined): VariableDeclaration[] | undefined {

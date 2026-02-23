@@ -45,7 +45,7 @@ const cases: FixtureCase[] = [
     productNameToken: 'CODESYS',
     minPous: 3,
     minConfigurations: 0,
-    minTasks: 0,
+    minTasks: 1,
     expectedPouNames: ['Main', 'Helper', 'LegacyDb']
   }
 ];
@@ -137,5 +137,32 @@ describe('PLCopenService external CODESYS fixtures', () => {
 
     expect(allPous.find(p => p.name === 'PLC_PRG')?.language).toBe('Mixed');
     expect(allPous.find(p => p.name === 'Signals')?.language).toBe('LD');
+  });
+
+  it('loads configuration-level tasks/programs from codesys-st-large fixture', () => {
+    const xml = readFileSync(resolve(fixtureDir, 'codesys-st-large.xml'), 'utf8');
+    const service = new PLCopenService();
+    service.loadFromText(xml);
+
+    const model = service.getModel();
+    const resources = model.configurations?.[0]?.resources ?? [];
+    const allTasks = resources.flatMap(resource => resource.tasks.map(task => task.name));
+    const allPrograms = resources.flatMap(resource => resource.programs.map(program => program.name));
+
+    expect(allTasks).toContain('Background-Task');
+    expect(allPrograms).toContain('Main Program');
+    expect(allPrograms).toContain('Program 1');
+  });
+
+  it('loads task-scoped program instances from codesys-st-medium fixture', () => {
+    const xml = readFileSync(resolve(fixtureDir, 'codesys-st-medium.xml'), 'utf8');
+    const service = new PLCopenService();
+    service.loadFromText(xml);
+
+    const model = service.getModel();
+    const resources = model.configurations?.[0]?.resources ?? [];
+    const allPrograms = resources.flatMap(resource => resource.programs.map(program => program.name));
+
+    expect(allPrograms).toContain('ComputeInst');
   });
 });
