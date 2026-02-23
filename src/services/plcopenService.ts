@@ -1268,7 +1268,8 @@ export class PLCopenService implements vscode.Disposable {
       type,
       variant,
       state,
-      addrType
+      addrType,
+      metadata: this.cloneNode(node)
     };
   }
 
