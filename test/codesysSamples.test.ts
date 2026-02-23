@@ -104,11 +104,13 @@ describe('PLCopenService external CODESYS fixtures', () => {
     expect(allPous.map(p => p.name)).toContain('Signals');
     expect(allPous.map(p => p.name)).toContain('Simulation');
 
-    expect(allPous.find(p => p.name === 'PLC_PRG')?.language).toBe('CFC');
+    expect(allPous.find(p => p.name === 'PLC_PRG')?.language).toBe('Mixed');
     expect(allPous.find(p => p.name === 'Signals')?.language).toBe('LD');
     expect(allPous.find(p => p.name === 'Simulation')?.language).toBe('ST');
+    expect(allPous.find(p => p.name === 'PLC_PRG')?.body).toContain('Glob_Var.Compressor :=');
 
     expect(service.getStructuredTextBlocks().map(p => p.name)).toContain('Simulation');
+    expect(service.getStructuredTextBlocks().map(p => p.name)).toContain('PLC_PRG');
     expect(service.getLoadWarnings().length).toBeGreaterThan(0);
 
     const ladder = service.getLadderRungs();
@@ -131,7 +133,7 @@ describe('PLCopenService external CODESYS fixtures', () => {
     expect(allPous.map(p => p.name)).toContain('Signals');
     expect(allPous.map(p => p.name)).toContain('Simulation');
 
-    expect(allPous.find(p => p.name === 'PLC_PRG')?.language).toBe('CFC');
+    expect(allPous.find(p => p.name === 'PLC_PRG')?.language).toBe('Mixed');
     expect(allPous.find(p => p.name === 'Signals')?.language).toBe('LD');
   });
 });

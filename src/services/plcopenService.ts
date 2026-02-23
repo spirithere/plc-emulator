@@ -319,19 +319,34 @@ export class PLCopenService implements vscode.Disposable {
       const bodySt = this.extractStructuredTextBody(pou);
       const hasLd = Boolean(pou?.body?.LD || pou?.body?.ld);
       const hasCfc = this.hasCfcBody(pou);
-      const language = this.detectPouLanguage({ hasLd, hasCfc, stBody: bodySt });
-      const body =
+      const interfaceSection = this.extractInterface(pou?.interface);
+      const transpiled = hasCfc ? this.transpileCfcToStructuredText(pou, name, interfaceSection) : undefined;
+      const language = this.detectPouLanguage({
+        hasLd,
+        hasCfc,
+        stBody: bodySt,
+        hasTranspiledCfc: Boolean(transpiled?.body)
+      });
+      let body =
         language === 'CFC'
           ? this.buildCfcPreview(pou, name)
           : language === 'LD'
             ? this.buildLdPreview(pou, name)
             : bodySt;
 
-      if (language !== 'ST') {
-        this.reportLoadWarning(`POU "${name}" is ${language} and will be opened in read-only preview mode.`);
+      if ((language === 'Mixed' || language === 'CFC') && transpiled?.body && bodySt.trim().length === 0) {
+        body = transpiled.body;
       }
 
-      const interfaceSection = this.extractInterface(pou?.interface);
+      if (language !== 'ST') {
+        if (transpiled?.body && language === 'Mixed') {
+          this.reportLoadWarning(`POU "${name}" includes CFC and is loaded as transpiled ST (read-only source preview).`);
+        } else {
+          this.reportLoadWarning(`POU "${name}" is ${language} and will be opened in read-only preview mode.`);
+        }
+      }
+      transpiled?.warnings.forEach(message => this.reportLoadWarning(`POU "${name}": ${message}`));
+
       return {
         name,
         pouType: (pou?.pouType ?? pou?.['@_pouType'] ?? 'program') as any,
@@ -708,10 +723,13 @@ export class PLCopenService implements vscode.Disposable {
     );
   }
 
-  private detectPouLanguage(params: { hasLd: boolean; hasCfc: boolean; stBody: string }): StructuredTextBlock['language'] {
-    const { hasLd, hasCfc, stBody } = params;
+  private detectPouLanguage(params: { hasLd: boolean; hasCfc: boolean; stBody: string; hasTranspiledCfc: boolean }): StructuredTextBlock['language'] {
+    const { hasLd, hasCfc, stBody, hasTranspiledCfc } = params;
     const hasSt = stBody.trim().length > 0;
     if (hasSt && (hasLd || hasCfc)) {
+      return 'Mixed';
+    }
+    if (!hasSt && hasTranspiledCfc) {
       return 'Mixed';
     }
     if (hasSt) {
@@ -724,6 +742,354 @@ export class PLCopenService implements vscode.Disposable {
       return 'LD';
     }
     return 'ST';
+  }
+
+  private transpileCfcToStructuredText(
+    pou: any,
+    pouName: string,
+    interfaceSection: PouInterface | undefined
+  ): { body?: string; warnings: string[] } {
+    const warnings: string[] = [];
+    const cfcNode = this.extractCfcNode(pou);
+    if (!cfcNode || typeof cfcNode !== 'object') {
+      return { warnings };
+    }
+
+    const inVariables = ensureArray(cfcNode?.inVariable) ?? [];
+    const connectors = ensureArray(cfcNode?.connector) ?? [];
+    const blocks = ensureArray(cfcNode?.block) ?? [];
+    const outVariables = ensureArray(cfcNode?.outVariable) ?? [];
+
+    type CfcBlockNode = {
+      localId?: string | number;
+      typeName?: string;
+      instanceName?: string;
+      executionOrderId?: string | number;
+      inputVariables?: any;
+    };
+
+    const inById = new Map<string, any>();
+    const connectorById = new Map<string, any>();
+    const blockById = new Map<string, CfcBlockNode>();
+    const outputExprById = new Map<string, string>();
+    const emittedBlocks = new Set<string>();
+    const emittedProgramCalls = new Set<string>();
+    const statements: string[] = [];
+    const generatedLatchVars = new Set<string>();
+
+    const normalizeId = (value: unknown): string | undefined => {
+      if (value === undefined || value === null) return undefined;
+      const text = String(value).trim();
+      return text.length > 0 ? text : undefined;
+    };
+
+    inVariables.forEach((node: any) => {
+      const id = normalizeId(this.readAttr(node, 'localId') ?? this.readAttr(node, 'id'));
+      if (id) {
+        inById.set(id, node);
+      }
+    });
+    connectors.forEach((node: any) => {
+      const id = normalizeId(this.readAttr(node, 'localId') ?? this.readAttr(node, 'id'));
+      if (id) {
+        connectorById.set(id, node);
+      }
+    });
+    blocks.forEach((node: CfcBlockNode) => {
+      const id = normalizeId(this.readAttr(node, 'localId') ?? this.readAttr(node, 'id'));
+      if (id) {
+        blockById.set(id, node);
+      }
+    });
+
+    const getConnectionRefId = (connectionPointInNode: any): string | undefined => {
+      const connection = ensureArray(connectionPointInNode?.connection)?.[0];
+      return normalizeId(this.readAttr(connection, 'refLocalId') ?? this.readAttr(connection, 'refLocalID'));
+    };
+
+    const getInputExpr = (block: CfcBlockNode, ...candidates: string[]): string => {
+      const vars = ensureArray(block?.inputVariables?.variable) ?? [];
+      for (const candidate of candidates) {
+        const variable = vars.find((v: any) => this.firstNonEmpty(this.readAttr(v, 'formalParameter')).toUpperCase() === candidate.toUpperCase());
+        if (!variable) {
+          continue;
+        }
+        const refId = getConnectionRefId(variable?.connectionPointIn);
+        if (!refId) {
+          continue;
+        }
+        return resolveRef(refId);
+      }
+      return '0';
+    };
+
+    const sanitizeIdentifier = (name: string): string => {
+      const sanitized = name.replace(/[^A-Za-z0-9_]/g, '_');
+      if (/^[0-9]/.test(sanitized)) {
+        return `_${sanitized}`;
+      }
+      return sanitized;
+    };
+
+    const makeLatchName = (block: CfcBlockNode, fallbackLocalId: string): string => {
+      const instanceName = this.firstNonEmpty(this.readAttr(block, 'instanceName'));
+      const base = instanceName || `sr_${fallbackLocalId}`;
+      return `__cfc_${sanitizeIdentifier(base)}_q1`;
+    };
+
+    const resolveInExpression = (node: any): string => {
+      const expr = this.firstNonEmpty(node?.expression, node?.['#text'], node?.__text);
+      return expr || '0';
+    };
+
+    const resolveBlock = (id: string): string => {
+      const cached = outputExprById.get(id);
+      if (cached !== undefined) {
+        return cached;
+      }
+
+      const block = blockById.get(id);
+      if (!block) {
+        warnings.push(`CFC node localId=${id} is referenced but no producer node was found.`);
+        outputExprById.set(id, '0');
+        return '0';
+      }
+
+      const typeName = this.firstNonEmpty(this.readAttr(block, 'typeName')).toUpperCase();
+      const blockKey = `${typeName}#${id}`;
+      const binary = (symbol: string): string => `(${getInputExpr(block, 'IN1')}) ${symbol} (${getInputExpr(block, 'IN2')})`;
+
+      if (typeName === 'ADD') {
+        outputExprById.set(id, binary('+'));
+        return outputExprById.get(id) as string;
+      }
+      if (typeName === 'SUB') {
+        outputExprById.set(id, binary('-'));
+        return outputExprById.get(id) as string;
+      }
+      if (typeName === 'MUL') {
+        outputExprById.set(id, binary('*'));
+        return outputExprById.get(id) as string;
+      }
+      if (typeName === 'DIV') {
+        outputExprById.set(id, binary('/'));
+        return outputExprById.get(id) as string;
+      }
+      if (typeName === 'GT') {
+        outputExprById.set(id, binary('>'));
+        return outputExprById.get(id) as string;
+      }
+      if (typeName === 'GE') {
+        outputExprById.set(id, binary('>='));
+        return outputExprById.get(id) as string;
+      }
+      if (typeName === 'LT') {
+        outputExprById.set(id, binary('<'));
+        return outputExprById.get(id) as string;
+      }
+      if (typeName === 'LE') {
+        outputExprById.set(id, binary('<='));
+        return outputExprById.get(id) as string;
+      }
+      if (typeName === 'EQ') {
+        outputExprById.set(id, binary('='));
+        return outputExprById.get(id) as string;
+      }
+      if (typeName === 'NE') {
+        outputExprById.set(id, binary('<>'));
+        return outputExprById.get(id) as string;
+      }
+      if (typeName === 'AND') {
+        outputExprById.set(id, binary('AND'));
+        return outputExprById.get(id) as string;
+      }
+      if (typeName === 'OR') {
+        outputExprById.set(id, binary('OR'));
+        return outputExprById.get(id) as string;
+      }
+      if (typeName === 'SR' || typeName === 'RS') {
+        const setExpr = getInputExpr(block, 'SET1', 'S');
+        const resetExpr = getInputExpr(block, 'RESET', 'R');
+        const latch = makeLatchName(block, id);
+        if (!emittedBlocks.has(blockKey)) {
+          statements.push(`IF ${setExpr} THEN`);
+          statements.push(`  ${latch} := TRUE;`);
+          statements.push('END_IF;');
+          statements.push(`IF ${resetExpr} THEN`);
+          statements.push(`  ${latch} := FALSE;`);
+          statements.push('END_IF;');
+          emittedBlocks.add(blockKey);
+          generatedLatchVars.add(latch);
+        }
+        outputExprById.set(id, latch);
+        return latch;
+      }
+
+      const callType = this.resolveCfcCallType(block);
+      if (callType === 'program') {
+        const rawType = this.firstNonEmpty(this.readAttr(block, 'typeName'), 'UNKNOWN');
+        if (!emittedProgramCalls.has(blockKey)) {
+          statements.push(`// CFC program call "${rawType}" is skipped (not executable in ST subset).`);
+          emittedProgramCalls.add(blockKey);
+          warnings.push(`CFC program call "${rawType}" was imported as comment only.`);
+        }
+        outputExprById.set(id, '0');
+        return '0';
+      }
+
+      warnings.push(`Unsupported CFC block type "${typeName || 'UNKNOWN'}" is imported as constant 0.`);
+      outputExprById.set(id, '0');
+      return '0';
+    };
+
+    const resolveRef = (id: string): string => {
+      const cached = outputExprById.get(id);
+      if (cached !== undefined) {
+        return cached;
+      }
+      const inNode = inById.get(id);
+      if (inNode) {
+        const expr = resolveInExpression(inNode);
+        outputExprById.set(id, expr);
+        return expr;
+      }
+
+      const connectorNode = connectorById.get(id);
+      if (connectorNode) {
+        const ref = getConnectionRefId(connectorNode?.connectionPointIn);
+        const expr = ref ? resolveRef(ref) : '0';
+        outputExprById.set(id, expr);
+        return expr;
+      }
+
+      if (blockById.has(id)) {
+        return resolveBlock(id);
+      }
+
+      warnings.push(`CFC reference localId=${id} has no known node type.`);
+      outputExprById.set(id, '0');
+      return '0';
+    };
+
+    blocks
+      .slice()
+      .sort((a: CfcBlockNode, b: CfcBlockNode) => {
+        const ao = Number.parseInt(String(this.readAttr(a, 'executionOrderId') ?? ''), 10);
+        const bo = Number.parseInt(String(this.readAttr(b, 'executionOrderId') ?? ''), 10);
+        if (Number.isFinite(ao) && Number.isFinite(bo)) {
+          return ao - bo;
+        }
+        const aid = Number.parseInt(String(this.readAttr(a, 'localId') ?? ''), 10);
+        const bid = Number.parseInt(String(this.readAttr(b, 'localId') ?? ''), 10);
+        if (Number.isFinite(aid) && Number.isFinite(bid)) {
+          return aid - bid;
+        }
+        return 0;
+      })
+      .forEach(block => {
+        const id = normalizeId(this.readAttr(block, 'localId') ?? this.readAttr(block, 'id'));
+        if (id) {
+          void resolveBlock(id);
+        }
+      });
+
+    outVariables.forEach((outNode: any) => {
+      const target = this.firstNonEmpty(outNode?.expression);
+      if (!target) {
+        return;
+      }
+      const refId = getConnectionRefId(outNode?.connectionPointIn);
+      if (!refId) {
+        warnings.push(`CFC outVariable "${target}" has no upstream connection.`);
+        return;
+      }
+      const source = resolveRef(refId);
+      statements.push(`${target} := ${source};`);
+    });
+
+    if (statements.length === 0) {
+      return { warnings };
+    }
+
+    const varLines: string[] = [];
+    const localVars = interfaceSection?.localVars ?? [];
+    localVars.forEach(localVar => {
+      const varName = this.firstNonEmpty(localVar.name);
+      if (!varName) {
+        return;
+      }
+      const dataType = this.firstNonEmpty(localVar.dataType, 'BOOL');
+      const initial = this.formatStInitialValue(localVar.initialValue);
+      if (initial !== undefined) {
+        varLines.push(`  ${varName} : ${dataType} := ${initial};`);
+      } else {
+        varLines.push(`  ${varName} : ${dataType};`);
+      }
+    });
+    generatedLatchVars.forEach(latch => {
+      if (!localVars.some(variable => this.firstNonEmpty(variable.name).toUpperCase() === latch.toUpperCase())) {
+        varLines.push(`  ${latch} : BOOL := FALSE;`);
+      }
+    });
+
+    const lines: string[] = [`PROGRAM ${pouName}`];
+    if (varLines.length > 0) {
+      lines.push('VAR');
+      lines.push(...varLines);
+      lines.push('END_VAR');
+      lines.push('');
+    }
+    statements.forEach(statement => lines.push(statement));
+    lines.push('END_PROGRAM');
+
+    return { body: lines.join('\n'), warnings };
+  }
+
+  private resolveCfcCallType(block: any): string | undefined {
+    const dataNodes = ensureArray(block?.addData?.data);
+    for (const dataNode of dataNodes ?? []) {
+      const dataName = this.firstNonEmpty(this.readAttr(dataNode, 'name')).toLowerCase();
+      if (!dataName.includes('cfccalltype')) {
+        continue;
+      }
+      const raw = dataNode?.CallType ?? dataNode?.callType;
+      if (typeof raw === 'string') {
+        return raw.trim().toLowerCase();
+      }
+      if (raw && typeof raw === 'object') {
+        const text = this.firstNonEmpty(raw?.['#text'], raw?.__text);
+        if (text) {
+          return text.toLowerCase();
+        }
+      }
+    }
+    return undefined;
+  }
+
+  private formatStInitialValue(value: unknown): string | undefined {
+    if (value === undefined || value === null) {
+      return undefined;
+    }
+    if (typeof value === 'boolean') {
+      return value ? 'TRUE' : 'FALSE';
+    }
+    if (typeof value === 'number') {
+      return Number.isFinite(value) ? String(value) : undefined;
+    }
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (trimmed.length === 0) {
+        return undefined;
+      }
+      if (/^[+-]?[0-9]+(?:\.[0-9]+)?$/.test(trimmed)) {
+        return trimmed;
+      }
+      if (/^(TRUE|FALSE)$/i.test(trimmed)) {
+        return trimmed.toUpperCase();
+      }
+      return undefined;
+    }
+    return undefined;
   }
 
   private buildCfcPreview(pou: any, name: string): string {
