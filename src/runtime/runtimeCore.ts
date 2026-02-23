@@ -102,17 +102,17 @@ export class RuntimeCore {
     const addr = this.inferAddrType(identifier);
     if (addr === 'X') {
       const boolValue = this.toBoolean(value);
-      this.options.ioAdapter.setInputValue(identifier, boolValue);
-      this.variables.set(identifier, boolValue);
+      this.setInputWithAliases(identifier, boolValue);
+      this.setVariableWithAliases(identifier, boolValue);
       return;
     }
     if (addr === 'Y') {
       const boolValue = this.toBoolean(value);
-      this.options.ioAdapter.setOutputValue(identifier, boolValue);
-      this.variables.set(identifier, boolValue);
+      this.setOutputWithAliases(identifier, boolValue);
+      this.setVariableWithAliases(identifier, boolValue);
       return;
     }
-    this.variables.set(identifier, value);
+    this.setVariableWithAliases(identifier, value);
   }
 
   public getVariableNames(): string[] {
@@ -351,8 +351,8 @@ export class RuntimeCore {
       } else if (el.type === 'coil') {
         const canReachRight = rightReach[i + 1] ?? false;
         const energized = incoming && canReachRight;
-        this.variables.set(el.label, energized);
-        this.options.ioAdapter.setOutputValue(el.label, energized);
+        this.setVariableWithAliases(el.label, energized);
+        this.setOutputWithAliases(el.label, energized);
         next = incoming;
       } else {
         // Non-boolean instruction nodes are currently treated as pass-through in
@@ -407,8 +407,8 @@ export class RuntimeCore {
       } else if (element.type === 'coil') {
         const canReachRight = suffixReach ? suffixReach[idx + 1] : true;
         const energized = powerRail && canReachRight;
-        this.variables.set(element.label, energized);
-        this.options.ioAdapter.setOutputValue(element.label, energized);
+        this.setVariableWithAliases(element.label, energized);
+        this.setOutputWithAliases(element.label, energized);
       }
     });
     return powerRail;
@@ -533,8 +533,8 @@ export class RuntimeCore {
 
     if (element.type === 'coil') {
       const energized = incoming;
-      this.variables.set(element.label, energized);
-      this.options.ioAdapter.setOutputValue(element.label, energized);
+      this.setVariableWithAliases(element.label, energized);
+      this.setOutputWithAliases(element.label, energized);
       return energized;
     }
 
@@ -588,7 +588,7 @@ export class RuntimeCore {
       state.elapsedMs = nextElapsed;
       state.q = q;
       if (instanceName) {
-        this.variables.set(`${instanceName}.Q`, q);
+        this.setVariableWithAliases(`${instanceName}.Q`, q);
       }
       return q;
     }
@@ -619,7 +619,7 @@ export class RuntimeCore {
       state.elapsedMs = elapsed;
       state.out = out;
       if (instanceName) {
-        this.variables.set(`${instanceName}.OUT`, out);
+        this.setVariableWithAliases(`${instanceName}.OUT`, out);
       }
       return out;
     }
@@ -674,10 +674,11 @@ export class RuntimeCore {
     if (!Number.isNaN(asNumber)) {
       return asNumber;
     }
-    if (this.variables.has(text)) {
-      return this.variables.get(text);
+    const variableValue = this.getVariableByAliases(text);
+    if (variableValue !== undefined) {
+      return variableValue;
     }
-    const ioValue = this.options.ioAdapter.getInputValue(text);
+    const ioValue = this.getInputByAliases(text);
     if (ioValue !== undefined) {
       return ioValue;
     }
@@ -731,21 +732,21 @@ export class RuntimeCore {
   private resolveSignal(label: string, fallback: boolean, addrType?: 'X' | 'M' | 'Y'): boolean {
     const addr = addrType || this.inferAddrType(label);
     if (addr === 'X') {
-      const ioValue = this.options.ioAdapter.getInputValue(label);
+      const ioValue = this.getInputByAliases(label);
       if (ioValue !== undefined) {
-        this.variables.set(label, ioValue);
+        this.setVariableWithAliases(label, ioValue);
         return ioValue;
       }
     }
-    const directIo = this.options.ioAdapter.getInputValue(label);
+    const directIo = this.getInputByAliases(label);
     if (directIo !== undefined) {
-      this.variables.set(label, directIo);
+      this.setVariableWithAliases(label, directIo);
       return directIo;
     }
-    if (!this.variables.has(label)) {
-      this.variables.set(label, fallback);
+    if (this.getVariableByAliases(label) === undefined) {
+      this.setVariableWithAliases(label, fallback);
     }
-    const value = this.variables.get(label);
+    const value = this.getVariableByAliases(label);
     if (typeof value === 'number') {
       return value !== 0;
     }
@@ -756,9 +757,12 @@ export class RuntimeCore {
     if (!identifier) {
       return undefined;
     }
-    const c = String(identifier).trim().toUpperCase()[0];
-    if (c === 'X' || c === 'M' || c === 'Y') {
-      return c;
+    const aliases = this.aliasIdentifiers(identifier);
+    for (const alias of aliases) {
+      const c = String(alias).trim().toUpperCase()[0];
+      if (c === 'X' || c === 'M' || c === 'Y') {
+        return c;
+      }
     }
     return undefined;
   }
@@ -770,7 +774,63 @@ export class RuntimeCore {
     if (typeof value === 'number') {
       return value !== 0;
     }
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      if (normalized === 'true' || normalized === '1' || normalized === 'on') return true;
+      if (normalized === 'false' || normalized === '0' || normalized === 'off') return false;
+      return normalized.length > 0;
+    }
     return Boolean(value);
+  }
+
+  private aliasIdentifiers(identifier: string | undefined): string[] {
+    const text = String(identifier ?? '').trim();
+    if (!text) {
+      return [];
+    }
+    const aliases = new Set<string>([text]);
+    const lastDot = text.lastIndexOf('.');
+    if (lastDot >= 0 && lastDot < text.length - 1) {
+      aliases.add(text.slice(lastDot + 1));
+    }
+    return Array.from(aliases);
+  }
+
+  private getVariableByAliases(identifier: string): RuntimeValue | undefined {
+    for (const alias of this.aliasIdentifiers(identifier)) {
+      if (this.variables.has(alias)) {
+        return this.variables.get(alias);
+      }
+    }
+    return undefined;
+  }
+
+  private setVariableWithAliases(identifier: string, value: RuntimeValue): void {
+    for (const alias of this.aliasIdentifiers(identifier)) {
+      this.variables.set(alias, value);
+    }
+  }
+
+  private getInputByAliases(identifier: string): boolean | undefined {
+    for (const alias of this.aliasIdentifiers(identifier)) {
+      const value = this.options.ioAdapter.getInputValue(alias);
+      if (value !== undefined) {
+        return value;
+      }
+    }
+    return undefined;
+  }
+
+  private setInputWithAliases(identifier: string, value: boolean): void {
+    for (const alias of this.aliasIdentifiers(identifier)) {
+      this.options.ioAdapter.setInputValue(alias, value);
+    }
+  }
+
+  private setOutputWithAliases(identifier: string, value: boolean): void {
+    for (const alias of this.aliasIdentifiers(identifier)) {
+      this.options.ioAdapter.setOutputValue(alias, value);
+    }
   }
 
   private emitRunState(running: boolean): void {

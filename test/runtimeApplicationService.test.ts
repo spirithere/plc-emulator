@@ -74,6 +74,16 @@ const graphInstructionLadder: LadderRung[] = [
   }
 ];
 
+const globalAliasLadder: LadderRung[] = [
+  {
+    id: 'rung_alias_0',
+    elements: [
+      { id: 'alias_contact', label: 'Glob_Var.Compressor', type: 'contact', variant: 'no', state: false },
+      { id: 'alias_coil', label: 'Glob_Var.Lamp', type: 'coil', state: false }
+    ]
+  }
+];
+
 function createRuntimeApp(): { runtime: RuntimeCore; app: RuntimeApplicationService } {
   const modelProvider = new InMemoryPlcModelProvider();
   const ioAdapter = new MemoryIOAdapter();
@@ -167,5 +177,20 @@ describe('RuntimeApplicationService', () => {
     expect(state.state['TON_0.Q']).toBe(true);
     expect(state.state.Y0).toBe(true);
     expect(state.io?.outputs.find(channel => channel.id === 'Y0')?.value).toBe(true);
+  });
+
+  it('resolves Glob_Var aliases for ladder IO/state', () => {
+    const { app } = createRuntimeApp();
+
+    app.loadProject({ pous: [], ladder: globalAliasLadder, configurations: [] });
+    app.setInput({ identifier: 'Compressor', value: true });
+    app.step(1);
+
+    const state = app.getState({ includeIo: true });
+    expect(state.state.Compressor).toBe(true);
+    expect(state.state.Lamp).toBe(true);
+    expect(state.state['Glob_Var.Lamp']).toBe(true);
+    expect(state.io?.outputs.find(channel => channel.id === 'Lamp')?.value).toBe(true);
+    expect(state.io?.outputs.find(channel => channel.id === 'Glob_Var.Lamp')?.value).toBe(true);
   });
 });

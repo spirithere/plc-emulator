@@ -831,6 +831,10 @@ export class PLCopenService implements vscode.Disposable {
       return sanitized;
     };
 
+    const normalizeGlobalPath = (expression: string): string => {
+      return expression.replace(/\bGlob_Var\./g, '');
+    };
+
     const makeLatchName = (block: CfcBlockNode, fallbackLocalId: string): string => {
       const instanceName = this.firstNonEmpty(this.readAttr(block, 'instanceName'));
       const base = instanceName || `sr_${fallbackLocalId}`;
@@ -839,7 +843,7 @@ export class PLCopenService implements vscode.Disposable {
 
     const resolveInExpression = (node: any): string => {
       const expr = this.firstNonEmpty(node?.expression, node?.['#text'], node?.__text);
-      return expr || '0';
+      return expr ? normalizeGlobalPath(expr) : '0';
     };
 
     const resolveBlock = (id: string): string => {
@@ -994,7 +998,7 @@ export class PLCopenService implements vscode.Disposable {
       });
 
     outVariables.forEach((outNode: any) => {
-      const target = this.firstNonEmpty(outNode?.expression);
+      const target = normalizeGlobalPath(this.firstNonEmpty(outNode?.expression));
       if (!target) {
         return;
       }

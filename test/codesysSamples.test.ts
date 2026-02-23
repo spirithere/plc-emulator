@@ -107,7 +107,9 @@ describe('PLCopenService external CODESYS fixtures', () => {
     expect(allPous.find(p => p.name === 'PLC_PRG')?.language).toBe('Mixed');
     expect(allPous.find(p => p.name === 'Signals')?.language).toBe('LD');
     expect(allPous.find(p => p.name === 'Simulation')?.language).toBe('ST');
-    expect(allPous.find(p => p.name === 'PLC_PRG')?.body).toContain('Glob_Var.Compressor :=');
+    const plcPrgBody = allPous.find(p => p.name === 'PLC_PRG')?.body ?? '';
+    expect(plcPrgBody).toContain('Compressor :=');
+    expect(plcPrgBody).not.toContain('Glob_Var.');
 
     expect(service.getStructuredTextBlocks().map(p => p.name)).toContain('Simulation');
     expect(service.getStructuredTextBlocks().map(p => p.name)).toContain('PLC_PRG');
