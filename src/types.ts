@@ -11,7 +11,7 @@ export interface PouInterface {
 export interface StructuredTextBlock {
   name: string;
   body: string;
-  language?: 'ST' | 'LD';
+  language?: 'ST' | 'LD' | 'CFC' | 'FBD' | 'Mixed';
   pouType?: PouType;
   interface?: PouInterface;
   addData?: Record<string, unknown>;
@@ -48,9 +48,11 @@ export interface VariableDeclaration {
 export interface LadderElement {
   id: string;
   label: string;
-  type: 'contact' | 'coil';
+  type: 'contact' | 'coil' | 'instruction';
   state?: boolean;
   variant?: 'no' | 'nc';
+  instructionKind?: string;
+  metadata?: Record<string, unknown>;
   // Addressing domain derived from label prefix or XML attribute.
   // X: input, M: internal memory, Y: output
   addrType?: AddressType;

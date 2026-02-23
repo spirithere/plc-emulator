@@ -21,7 +21,7 @@ export class POUTreeProvider implements vscode.TreeDataProvider<POUTreeItem> {
   getChildren(element?: POUTreeItem): vscode.ProviderResult<POUTreeItem[]> {
     if (!element) {
       return [
-        new POUTreeItem('Structured Text', vscode.TreeItemCollapsibleState.Expanded, 'group:st'),
+        new POUTreeItem('POUs', vscode.TreeItemCollapsibleState.Expanded, 'group:st'),
         new POUTreeItem('Ladder Rungs', vscode.TreeItemCollapsibleState.Expanded, 'group:ld')
       ];
     }
@@ -38,7 +38,7 @@ export class POUTreeProvider implements vscode.TreeDataProvider<POUTreeItem> {
   }
 
   private getStructuredTextItems(): POUTreeItem[] {
-    const blocks = this.plcService.getStructuredTextBlocks();
+    const blocks = this.plcService.getProjectPous();
     if (!blocks.length) {
       return [new POUTreeItem('No POUs found', vscode.TreeItemCollapsibleState.None, 'info')];
     }
@@ -57,12 +57,19 @@ export class POUTreeProvider implements vscode.TreeDataProvider<POUTreeItem> {
 
   private createPouItem(block: StructuredTextBlock): POUTreeItem {
     const item = new POUTreeItem(block.name, vscode.TreeItemCollapsibleState.None, 'pou');
-    item.description = 'Structured Text';
-    item.command = {
-      command: 'plcEmu.openStructuredTextBlock',
-      title: 'Edit Structured Text Block',
-      arguments: [block.name]
-    };
+    const language = block.language ?? 'ST';
+    item.description = language === 'ST' ? 'Structured Text' : language;
+    item.command = language === 'ST'
+      ? {
+          command: 'plcEmu.openStructuredTextBlock',
+          title: 'Edit Structured Text Block',
+          arguments: [block.name]
+        }
+      : {
+          command: 'plcEmu.openPouPreview',
+          title: 'Open POU Preview',
+          arguments: [block.name]
+        };
     return item;
   }
 

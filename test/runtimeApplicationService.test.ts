@@ -14,6 +14,76 @@ const latchLadder: LadderRung[] = [
   }
 ];
 
+const graphInstructionLadder: LadderRung[] = [
+  {
+    id: 'rung_graph_0',
+    elements: [
+      {
+        id: '4',
+        label: 'X0',
+        type: 'contact',
+        variant: 'no',
+        state: false,
+        metadata: {
+          connectionPointIn: {
+            connection: [{ refLocalId: '0' }]
+          }
+        }
+      },
+      {
+        id: '5',
+        label: '100',
+        type: 'instruction',
+        instructionKind: 'inVariable',
+        metadata: {}
+      },
+      {
+        id: '3',
+        label: 'TON_0:TON',
+        type: 'instruction',
+        instructionKind: 'block',
+        metadata: {
+          typeName: 'TON',
+          instanceName: 'TON_0',
+          inputVariables: {
+            variable: [
+              {
+                formalParameter: 'IN',
+                connectionPointIn: { connection: [{ refLocalId: '4' }] }
+              },
+              {
+                formalParameter: 'PT',
+                connectionPointIn: { connection: [{ refLocalId: '5' }] }
+              }
+            ]
+          }
+        }
+      },
+      {
+        id: '6',
+        label: 'Y0',
+        type: 'coil',
+        state: false,
+        metadata: {
+          connectionPointIn: {
+            connection: [{ refLocalId: '3' }]
+          }
+        }
+      }
+    ]
+  }
+];
+
+const globalAliasLadder: LadderRung[] = [
+  {
+    id: 'rung_alias_0',
+    elements: [
+      { id: 'alias_contact', label: 'Glob_Var.Compressor', type: 'contact', variant: 'no', state: false },
+      { id: 'alias_coil', label: 'Glob_Var.Lamp', type: 'coil', state: false }
+    ]
+  }
+];
+
 function createRuntimeApp(): { runtime: RuntimeCore; app: RuntimeApplicationService } {
   const modelProvider = new InMemoryPlcModelProvider();
   const ioAdapter = new MemoryIOAdapter();
@@ -94,5 +164,33 @@ describe('RuntimeApplicationService', () => {
     expect(() => app.step(1)).toThrow('Cannot step runtime while running.');
 
     app.stop();
+  });
+
+  it('executes instruction-graph ladder TON block wiring', () => {
+    const { app } = createRuntimeApp();
+
+    app.loadProject({ pous: [], ladder: graphInstructionLadder, configurations: [] });
+    app.setInput({ identifier: 'X0', value: true });
+    app.step(1);
+
+    const state = app.getState({ includeIo: true });
+    expect(state.state['TON_0.Q']).toBe(true);
+    expect(state.state.Y0).toBe(true);
+    expect(state.io?.outputs.find(channel => channel.id === 'Y0')?.value).toBe(true);
+  });
+
+  it('resolves Glob_Var aliases for ladder IO/state', () => {
+    const { app } = createRuntimeApp();
+
+    app.loadProject({ pous: [], ladder: globalAliasLadder, configurations: [] });
+    app.setInput({ identifier: 'Compressor', value: true });
+    app.step(1);
+
+    const state = app.getState({ includeIo: true });
+    expect(state.state.Compressor).toBe(true);
+    expect(state.state.Lamp).toBe(true);
+    expect(state.state['Glob_Var.Lamp']).toBe(true);
+    expect(state.io?.outputs.find(channel => channel.id === 'Lamp')?.value).toBe(true);
+    expect(state.io?.outputs.find(channel => channel.id === 'Glob_Var.Lamp')?.value).toBe(true);
   });
 });

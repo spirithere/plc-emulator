@@ -79,6 +79,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand('plcEmu.openProject', () => plcService.pickAndLoadProject()),
     vscode.commands.registerCommand('plcEmu.openStructuredText', () => openStructuredTextEditor()),
     vscode.commands.registerCommand('plcEmu.openStructuredTextBlock', (name: string) => openStructuredTextEditor(name)),
+    vscode.commands.registerCommand('plcEmu.openPouPreview', (name: string) => openPouPreview(name)),
     vscode.commands.registerCommand('plcEmu.openLadderEditor', () => ladderManager.show()),
     vscode.commands.registerCommand('plcEmu.openIOSimulator', () => ioPanel.show()),
     vscode.commands.registerCommand('plcEmu.openIOMapping', () => ioMappingPanel.show()),
@@ -154,6 +155,27 @@ async function openStructuredTextEditor(targetName?: string): Promise<void> {
   const mirrorUri = vscode.Uri.joinPath(cacheDir, `${block.name}.st`);
   await vscode.workspace.fs.writeFile(mirrorUri, Buffer.from(block.body, 'utf8'));
   const document = await vscode.workspace.openTextDocument(mirrorUri);
+  await vscode.window.showTextDocument(document, vscode.ViewColumn.Active, true);
+}
+
+async function openPouPreview(name: string): Promise<void> {
+  const block = plcService.getProjectPous().find(pou => pou.name === name);
+  if (!block) {
+    vscode.window.showErrorMessage(`POU "${name}" was not found.`);
+    return;
+  }
+
+  const header = [
+    `POU: ${block.name}`,
+    `Language: ${block.language ?? 'ST'}`,
+    `Type: ${block.pouType ?? 'program'}`,
+    ''
+  ].join('\n');
+  const content = `${header}${block.body ?? ''}`;
+  const document = await vscode.workspace.openTextDocument({
+    content,
+    language: 'plaintext'
+  });
   await vscode.window.showTextDocument(document, vscode.ViewColumn.Active, true);
 }
 

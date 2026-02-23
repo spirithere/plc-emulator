@@ -45,15 +45,8 @@ const cases: FixtureCase[] = [
     productNameToken: 'CODESYS',
     minPous: 3,
     minConfigurations: 0,
-    minTasks: 0,
+    minTasks: 1,
     expectedPouNames: ['Main', 'Helper', 'LegacyDb']
-  },
-  {
-    file: 'refrigerator-control.xml',
-    productNameToken: 'CODESYS',
-    minPous: 1,
-    minConfigurations: 1,
-    minTasks: 2
   }
 ];
 
@@ -82,6 +75,7 @@ describe('PLCopenService external CODESYS fixtures', () => {
     fixture.expectedPouNames?.forEach(name => {
       expect(model.pous.map(p => p.name)).toContain(name);
     });
+
   });
 
   it.each(cases)('round-trips $file through exportToXml/loadFromText', fixture => {
@@ -99,29 +93,76 @@ describe('PLCopenService external CODESYS fixtures', () => {
     expect(roundTrip.getModel().pous.length).toBeGreaterThanOrEqual(1);
   });
 
-  it('extracts CODESYS task definitions from refrigerator-control fixture', () => {
+  it('loads refrigerator-control fixture with CFC/LD POUs in preview mode', () => {
     const xml = readFileSync(resolve(fixtureDir, 'refrigerator-control.xml'), 'utf8');
     const service = new PLCopenService();
 
     service.loadFromText(xml);
-    const resources = service.getModel().configurations?.[0]?.resources ?? [];
-    const taskNames = resources.flatMap(resource => resource.tasks.map(task => task.name));
 
-    expect(taskNames).toContain('MainTask');
-    expect(taskNames).toContain('VISU_TASK');
+    const allPous = service.getProjectPous();
+    expect(allPous.map(p => p.name)).toContain('PLC_PRG');
+    expect(allPous.map(p => p.name)).toContain('Signals');
+    expect(allPous.map(p => p.name)).toContain('Simulation');
+
+    expect(allPous.find(p => p.name === 'PLC_PRG')?.language).toBe('Mixed');
+    expect(allPous.find(p => p.name === 'Signals')?.language).toBe('LD');
+    expect(allPous.find(p => p.name === 'Simulation')?.language).toBe('ST');
+    const plcPrgBody = allPous.find(p => p.name === 'PLC_PRG')?.body ?? '';
+    expect(plcPrgBody).toContain('Compressor :=');
+    expect(plcPrgBody).not.toContain('Glob_Var.');
+
+    expect(service.getStructuredTextBlocks().map(p => p.name)).toContain('Simulation');
+    expect(service.getStructuredTextBlocks().map(p => p.name)).toContain('PLC_PRG');
+    expect(service.getLoadWarnings().length).toBeGreaterThan(0);
+
+    const ladder = service.getLadderRungs();
+    expect(ladder.length).toBeGreaterThan(0);
+    const hasInstruction = ladder.some(rung => rung.elements.some(element => element.type === 'instruction'));
+    expect(hasInstruction).toBe(true);
   });
 
-  it('extracts task-bound CODESYS pouInstance program entries', () => {
+  it('round-trips refrigerator-control fixture without dropping CFC/LD POUs', () => {
     const xml = readFileSync(resolve(fixtureDir, 'refrigerator-control.xml'), 'utf8');
     const service = new PLCopenService();
-
     service.loadFromText(xml);
-    const programs = service.getModel().configurations?.[0]?.resources?.[0]?.programs ?? [];
 
-    expect(programs.map(program => program.name)).toContain('PLC_PRG');
-    expect(programs.map(program => program.name)).toContain('Simulation');
-    expect(programs.map(program => program.name)).toContain('VisuElems.Visu_Prg');
-    expect(programs.find(program => program.name === 'PLC_PRG')?.taskName).toBe('MainTask');
-    expect(programs.find(program => program.name === 'VisuElems.Visu_Prg')?.taskName).toBe('VISU_TASK');
+    const exported = service.exportToXml();
+    const roundTrip = new PLCopenService();
+    roundTrip.loadFromText(exported);
+
+    const allPous = roundTrip.getProjectPous();
+    expect(allPous.map(p => p.name)).toContain('PLC_PRG');
+    expect(allPous.map(p => p.name)).toContain('Signals');
+    expect(allPous.map(p => p.name)).toContain('Simulation');
+
+    expect(allPous.find(p => p.name === 'PLC_PRG')?.language).toBe('Mixed');
+    expect(allPous.find(p => p.name === 'Signals')?.language).toBe('LD');
+  });
+
+  it('loads configuration-level tasks/programs from codesys-st-large fixture', () => {
+    const xml = readFileSync(resolve(fixtureDir, 'codesys-st-large.xml'), 'utf8');
+    const service = new PLCopenService();
+    service.loadFromText(xml);
+
+    const model = service.getModel();
+    const resources = model.configurations?.[0]?.resources ?? [];
+    const allTasks = resources.flatMap(resource => resource.tasks.map(task => task.name));
+    const allPrograms = resources.flatMap(resource => resource.programs.map(program => program.name));
+
+    expect(allTasks).toContain('Background-Task');
+    expect(allPrograms).toContain('Main Program');
+    expect(allPrograms).toContain('Program 1');
+  });
+
+  it('loads task-scoped program instances from codesys-st-medium fixture', () => {
+    const xml = readFileSync(resolve(fixtureDir, 'codesys-st-medium.xml'), 'utf8');
+    const service = new PLCopenService();
+    service.loadFromText(xml);
+
+    const model = service.getModel();
+    const resources = model.configurations?.[0]?.resources ?? [];
+    const allPrograms = resources.flatMap(resource => resource.programs.map(program => program.name));
+
+    expect(allPrograms).toContain('ComputeInst');
   });
 });

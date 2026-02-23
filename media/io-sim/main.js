@@ -51,7 +51,9 @@ function section(title, channels, isInput) {
 
     const label = document.createElement('div');
     label.className = 'label';
-    label.innerHTML = `<strong>${channel.id}</strong> ${channel.label}`;
+    const secondary = channel.label && channel.label !== channel.id ? ` ${channel.label}` : '';
+    const address = channel.address ? ` <span class="address">${channel.address}</span>` : '';
+    label.innerHTML = `<strong>${channel.id}</strong>${secondary}${address}`;
     card.appendChild(label);
 
     const toggle = document.createElement('button');

@@ -38,4 +38,22 @@ describe('PLCopenService', () => {
     expect(ladder[0].branches?.[0].elements[0].label).toBe('M0');
     expect(ladder[0].elements[0].variant).toBe('nc');
   });
+
+  it('throws when XML has no POUs, ladder networks, or program bindings', () => {
+    const service = new PLCopenService();
+    const emptyProjectXml = `<?xml version="1.0" encoding="utf-8"?>
+<project xmlns="http://www.plcopen.org/xml/tc6_0200">
+  <types>
+    <dataTypes />
+    <pous />
+  </types>
+  <instances>
+    <configurations />
+  </instances>
+</project>`;
+
+    expect(() => service.loadFromText(emptyProjectXml)).toThrow(
+      'No POUs, ladder networks, or program bindings were found in the PLCopen XML.'
+    );
+  });
 });
