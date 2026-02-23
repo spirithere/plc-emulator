@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { IOSimService } from '../src/io/ioService';
 import { PLCProjectModel, StructuredTextBlock } from '../src/types';
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
+import { PLCopenService } from '../src/services/plcopenService';
 
 describe('IOSimService', () => {
   it('discovers mapped IO channels from POU interface variables', () => {
@@ -54,5 +57,21 @@ describe('IOSimService', () => {
 
     const output = service.getState().outputs.find(channel => channel.id === 'R1_fwd');
     expect(output?.address).toBe('%QX0.1');
+  });
+
+  it('discovers IO channels from FactoryIO ladder sample through PLCopenService model', () => {
+    const xml = readFileSync(
+      resolve(__dirname, '..', 'examples', 'external', 'ladder', 'factoryio-ft-con03.xml'),
+      'utf8'
+    );
+    const plcService = new PLCopenService();
+    plcService.loadFromText(xml);
+
+    const service = new IOSimService();
+    service.syncFromProject(plcService.getModel());
+    const state = service.getState();
+
+    expect(state.inputs.length).toBeGreaterThan(0);
+    expect(state.outputs.length).toBeGreaterThan(0);
   });
 });

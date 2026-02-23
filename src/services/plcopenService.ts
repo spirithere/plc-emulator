@@ -363,8 +363,13 @@ export class PLCopenService implements vscode.Disposable {
 
   private extractInterface(node: any): PouInterface | undefined {
     if (!node) return undefined;
-    const mapVars = (section: any): VariableDeclaration[] | undefined =>
-      ensureArray(section?.variable)?.map((v: any) => this.toVariableDeclaration(v));
+    const mapVars = (section: any): VariableDeclaration[] | undefined => {
+      const sections = ensureArray(section) ?? [];
+      const declarations = sections.flatMap(sectionNode =>
+        (ensureArray(sectionNode?.variable) ?? []).map((v: any) => this.toVariableDeclaration(v))
+      );
+      return declarations.length > 0 ? declarations : undefined;
+    };
     const interfaceObj: PouInterface = {
       inputVars: mapVars(node.inputVars),
       outputVars: mapVars(node.outputVars),
