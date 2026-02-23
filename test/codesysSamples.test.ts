@@ -93,10 +93,22 @@ describe('PLCopenService external CODESYS fixtures', () => {
     expect(roundTrip.getModel().pous.length).toBeGreaterThanOrEqual(1);
   });
 
-  it('throws clear error for unsupported CFC/advanced LD in refrigerator-control fixture', () => {
+  it('loads refrigerator-control fixture with CFC/LD POUs in preview mode', () => {
     const xml = readFileSync(resolve(fixtureDir, 'refrigerator-control.xml'), 'utf8');
     const service = new PLCopenService();
 
-    expect(() => service.loadFromText(xml)).toThrow('uses CFC implementation, which is not supported yet');
+    service.loadFromText(xml);
+
+    const allPous = service.getProjectPous();
+    expect(allPous.map(p => p.name)).toContain('PLC_PRG');
+    expect(allPous.map(p => p.name)).toContain('Signals');
+    expect(allPous.map(p => p.name)).toContain('Simulation');
+
+    expect(allPous.find(p => p.name === 'PLC_PRG')?.language).toBe('CFC');
+    expect(allPous.find(p => p.name === 'Signals')?.language).toBe('LD');
+    expect(allPous.find(p => p.name === 'Simulation')?.language).toBe('ST');
+
+    expect(service.getStructuredTextBlocks().map(p => p.name)).toContain('Simulation');
+    expect(service.getLoadWarnings().length).toBeGreaterThan(0);
   });
 });

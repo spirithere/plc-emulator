@@ -11,7 +11,7 @@ export interface PouInterface {
 export interface StructuredTextBlock {
   name: string;
   body: string;
-  language?: 'ST' | 'LD';
+  language?: 'ST' | 'LD' | 'CFC' | 'FBD' | 'Mixed';
   pouType?: PouType;
   interface?: PouInterface;
   addData?: Record<string, unknown>;

@@ -235,7 +235,7 @@ export class RuntimeCore {
   private seedVariables(): void {
     this.variables.clear();
     this.stRuntime.reset();
-    const allPous = this.getStructuredTextBlocks();
+    const allPous = this.getStructuredTextBlocks().filter(pou => this.isExecutableStructuredText(pou));
     const fbDefs = allPous.filter(b => (b.pouType ?? 'program') === 'functionBlock');
     this.stRuntime.setFunctionBlocks(fbDefs);
     this.seedGlobalVariables();
@@ -256,7 +256,9 @@ export class RuntimeCore {
 
   private scanCycle(): RuntimeStateEvent {
     const startedAt = Date.now();
-    const pous = this.getStructuredTextBlocks().filter(b => (b.pouType ?? 'program') === 'program');
+    const pous = this.getStructuredTextBlocks()
+      .filter(pou => this.isExecutableStructuredText(pou))
+      .filter(b => (b.pouType ?? 'program') === 'program');
     this.stRuntime.execute(pous, this.variables);
     this.stRuntime.executeFunctionBlocks(this.variables);
     this.executeLadder(this.getLadderRungs());
@@ -535,6 +537,10 @@ export class RuntimeCore {
 
   private getStructuredTextBlocks(): StructuredTextBlock[] {
     return this.options.modelProvider.getStructuredTextBlocks();
+  }
+
+  private isExecutableStructuredText(pou: StructuredTextBlock): boolean {
+    return (pou.language ?? 'ST') === 'ST' || (pou.language ?? 'ST') === 'Mixed';
   }
 
   private getLadderRungs(): LadderRung[] {

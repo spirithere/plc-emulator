@@ -30,9 +30,11 @@ const builderOptions = {
 };
 
 export class PLCopenService implements vscode.Disposable {
+  private readonly rawPouKey = '__plcopenRawPouNode';
   private readonly parser = new XMLParser(parserOptions);
   private readonly builder = new XMLBuilder(builderOptions);
   private model: PLCProjectModel = this.createDefaultModel();
+  private loadWarnings: string[] = [];
   private projectUri: vscode.Uri | undefined;
   private readonly changeEmitter = new vscode.EventEmitter<PLCProjectModel>();
   private fileWatcher: vscode.FileSystemWatcher | undefined;
@@ -94,6 +96,22 @@ export class PLCopenService implements vscode.Disposable {
 
     this.projectUri = uri;
     this.registerProjectWatcher();
+    this.showCompatibilityWarnings();
+  }
+
+  private showCompatibilityWarnings(): void {
+    if (this.loadWarnings.length === 0) {
+      return;
+    }
+    const first = this.loadWarnings[0];
+    const suffix = this.loadWarnings.length > 1 ? ` (+${this.loadWarnings.length - 1} more)` : '';
+    void vscode.window.showWarningMessage(`PLC project loaded with compatibility warnings: ${first}${suffix}`);
+  }
+
+  private reportLoadWarning(message: string): void {
+    if (!this.loadWarnings.includes(message)) {
+      this.loadWarnings.push(message);
+    }
   }
 
   /**
@@ -121,6 +139,7 @@ export class PLCopenService implements vscode.Disposable {
   }
 
   public loadFromText(xml: string): void {
+    this.loadWarnings = [];
     const ast = this.parser.parse(xml);
     const inflated = this.inflateModel(ast);
     this.validateLoadedModel(inflated);
@@ -134,7 +153,15 @@ export class PLCopenService implements vscode.Disposable {
   }
 
   public getStructuredTextBlocks(): StructuredTextBlock[] {
+    return this.model.pous.filter(pou => (pou.language ?? 'ST') === 'ST');
+  }
+
+  public getProjectPous(): StructuredTextBlock[] {
     return this.model.pous;
+  }
+
+  public getLoadWarnings(): string[] {
+    return [...this.loadWarnings];
   }
 
   public getLadderRungs(): LadderRung[] {
@@ -152,6 +179,9 @@ export class PLCopenService implements vscode.Disposable {
 
     // Parse ST var sections to surface local/POU-level variables (read-only for mapping UI).
     this.model.pous.forEach(pou => {
+      if ((pou.language ?? 'ST') !== 'ST') {
+        return;
+      }
       const parsed = parseStructuredText(pou.body);
       const sections = parsed.program?.varSections ?? [];
       sections.forEach(section => {
@@ -207,6 +237,9 @@ export class PLCopenService implements vscode.Disposable {
     const block = this.model.pous.find(p => p.name === name);
     if (!block) {
       throw new Error(`Structured Text block ${name} not found in model.`);
+    }
+    if ((block.language ?? 'ST') !== 'ST') {
+      throw new Error(`POU ${name} is not a Structured Text block and cannot be edited as ST.`);
     }
 
     block.body = body;
@@ -276,29 +309,36 @@ export class PLCopenService implements vscode.Disposable {
       return [];
     }
 
-    // Ignore ladder-only POUs so we don't mirror them as empty ST blocks and create
-    // duplicates on every save. The ladder networks are extracted separately.
-    const stPous = pouNodes.filter((pou: any) => !(pou?.body?.LD || pou?.body?.ld));
-
-    return stPous.map((pou: any) => {
+    return pouNodes.map((pou: any) => {
       const name = pou?.name ?? pou?.['@_name'] ?? 'UnnamedPOU';
       const bodySt = this.extractStructuredTextBody(pou);
-      if (this.hasUnsupportedCfcBody(pou) && bodySt.trim().length === 0) {
-        throw new Error(`POU "${name}" uses CFC implementation, which is not supported yet.`);
+      const hasLd = Boolean(pou?.body?.LD || pou?.body?.ld);
+      const hasCfc = this.hasCfcBody(pou);
+      const language = this.detectPouLanguage({ hasLd, hasCfc, stBody: bodySt });
+      const body =
+        language === 'CFC'
+          ? this.buildCfcPreview(pou, name)
+          : language === 'LD'
+            ? this.buildLdPreview(pou, name)
+            : bodySt;
+
+      if (language !== 'ST') {
+        this.reportLoadWarning(`POU "${name}" is ${language} and will be opened in read-only preview mode.`);
       }
+
       const interfaceSection = this.extractInterface(pou?.interface);
       return {
         name,
         pouType: (pou?.pouType ?? pou?.['@_pouType'] ?? 'program') as any,
-        body: bodySt,
-        language: 'ST' as const,
-        interface: interfaceSection
+        body,
+        language,
+        interface: interfaceSection,
+        addData: {
+          ...(pou?.addData && typeof pou.addData === 'object' ? pou.addData : {}),
+          [this.rawPouKey]: this.cloneNode(pou)
+        }
       };
-    })
-      // Strip out empty ladder mirror POUs that were previously produced from LD networks.
-      .filter(
-        p => !(p.name === 'MainLadder' && (!p.body || p.body.trim() === '') && !p.interface)
-      );
+    });
   }
 
   private extractInterface(node: any): PouInterface | undefined {
@@ -354,9 +394,10 @@ export class PLCopenService implements vscode.Disposable {
         const ldBody = pou.body?.LD ?? pou.body?.ld;
         const unsupportedElements = this.getUnsupportedLdElements(ldBody);
         if (unsupportedElements.length > 0) {
-          throw new Error(
-            `POU "${pouName}" contains unsupported LD elements: ${unsupportedElements.join(', ')}.`
+          this.reportLoadWarning(
+            `POU "${pouName}" contains advanced LD elements (${unsupportedElements.join(', ')}); skipped in simplified ladder runtime.`
           );
+          return;
         }
         const networks = ensureArray(ldBody?.network);
         if (networks && networks.length > 0) {
@@ -646,7 +687,7 @@ export class PLCopenService implements vscode.Disposable {
     return result;
   }
 
-  private hasUnsupportedCfcBody(pou: any): boolean {
+  private hasCfcBody(pou: any): boolean {
     const body = pou?.body;
     if (!body) {
       return false;
@@ -661,6 +702,82 @@ export class PLCopenService implements vscode.Disposable {
         return Boolean(dataNode?.CFC ?? dataNode?.cfc);
       }) ?? false
     );
+  }
+
+  private detectPouLanguage(params: { hasLd: boolean; hasCfc: boolean; stBody: string }): StructuredTextBlock['language'] {
+    const { hasLd, hasCfc, stBody } = params;
+    const hasSt = stBody.trim().length > 0;
+    if (hasSt && (hasLd || hasCfc)) {
+      return 'Mixed';
+    }
+    if (hasSt) {
+      return 'ST';
+    }
+    if (hasCfc) {
+      return 'CFC';
+    }
+    if (hasLd) {
+      return 'LD';
+    }
+    return 'ST';
+  }
+
+  private buildCfcPreview(pou: any, name: string): string {
+    const cfcNode = this.extractCfcNode(pou);
+    const blockCount = ensureArray(cfcNode?.block)?.length ?? 0;
+    const inVariableCount = ensureArray(cfcNode?.inVariable)?.length ?? 0;
+    const outVariableCount = ensureArray(cfcNode?.outVariable)?.length ?? 0;
+    const connectorCount = ensureArray(cfcNode?.connector)?.length ?? 0;
+    const xml = this.renderPreviewXml('CFC', cfcNode ?? {});
+    return [
+      `POU: ${name}`,
+      'Language: CFC',
+      `Nodes: block=${blockCount}, inVariable=${inVariableCount}, outVariable=${outVariableCount}, connector=${connectorCount}`,
+      '',
+      xml
+    ].join('\n');
+  }
+
+  private buildLdPreview(pou: any, name: string): string {
+    const ldNode = pou?.body?.LD ?? pou?.body?.ld ?? {};
+    const contactCount = ensureArray(ldNode?.contact)?.length ?? 0;
+    const coilCount = ensureArray(ldNode?.coil)?.length ?? 0;
+    const blockCount = ensureArray(ldNode?.block)?.length ?? 0;
+    const inVariableCount = ensureArray(ldNode?.inVariable)?.length ?? 0;
+    const jumpCount = ensureArray(ldNode?.jump)?.length ?? 0;
+    const labelCount = ensureArray(ldNode?.label)?.length ?? 0;
+    const unsupported = this.getUnsupportedLdElements(ldNode);
+    const summary = unsupported.length > 0
+      ? `UnsupportedForSimplifiedRuntime: ${unsupported.join(', ')}`
+      : 'UnsupportedForSimplifiedRuntime: none';
+    const xml = this.renderPreviewXml('LD', ldNode);
+    return [
+      `POU: ${name}`,
+      'Language: LD',
+      `Nodes: contact=${contactCount}, coil=${coilCount}, block=${blockCount}, inVariable=${inVariableCount}, jump=${jumpCount}, label=${labelCount}`,
+      summary,
+      '',
+      xml
+    ].join('\n');
+  }
+
+  private extractCfcNode(pou: any): any | undefined {
+    const dataNodes = ensureArray(pou?.body?.addData?.data);
+    return dataNodes?.find((dataNode: any) => {
+      const dataName = this.readAttr(dataNode, 'name');
+      if (typeof dataName === 'string' && dataName.toLowerCase().includes('cfc')) {
+        return true;
+      }
+      return Boolean(dataNode?.CFC ?? dataNode?.cfc);
+    })?.CFC ?? dataNodes?.find((dataNode: any) => Boolean(dataNode?.cfc))?.cfc;
+  }
+
+  private renderPreviewXml(root: string, node: any): string {
+    try {
+      return this.builder.build({ [root]: node ?? {} });
+    } catch {
+      return JSON.stringify(node ?? {}, null, 2);
+    }
   }
 
   private getUnsupportedLdElements(ldBody: any): string[] {
@@ -828,14 +945,10 @@ export class PLCopenService implements vscode.Disposable {
   }
 
   private serializeModel(): any {
-    let pouNodes: any[] = this.model.pous.map(pou => ({
-      '@_name': pou.name,
-      '@_pouType': pou.pouType ?? 'program',
-      interface: this.serializeInterface(pou.interface),
-      body: { ST: pou.body }
-    }));
+    let pouNodes: any[] = this.model.pous.map(pou => this.serializePouNode(pou));
 
-    const ladderPou = this.serializeLadderPou();
+    const hasRawLdPou = pouNodes.some(node => Boolean(node?.body?.LD || node?.body?.ld));
+    const ladderPou = hasRawLdPou ? undefined : this.serializeLadderPou();
     if (ladderPou) {
       const ladderName = ladderPou?.['@_name'] ?? ladderPou?.name;
       // Remove any existing POU with the same name to avoid duplicates from previous saves.
@@ -867,6 +980,42 @@ export class PLCopenService implements vscode.Disposable {
     }
 
     return { project: projectNode };
+  }
+
+  private serializePouNode(pou: StructuredTextBlock): any {
+    const raw = this.getRawPouNode(pou);
+    const language = pou.language ?? 'ST';
+    if (raw) {
+      const node = this.cloneNode(raw);
+      node['@_name'] = pou.name;
+      node['@_pouType'] = pou.pouType ?? node?.['@_pouType'] ?? 'program';
+      if (language === 'ST' || language === 'Mixed') {
+        node.body = node.body ?? {};
+        node.body.ST = pou.body;
+      }
+      const serializedInterface = this.serializeInterface(pou.interface);
+      if (serializedInterface) {
+        node.interface = serializedInterface;
+      }
+      return node;
+    }
+
+    return {
+      '@_name': pou.name,
+      '@_pouType': pou.pouType ?? 'program',
+      interface: this.serializeInterface(pou.interface),
+      body: { ST: pou.body }
+    };
+  }
+
+  private getRawPouNode(pou: StructuredTextBlock): any | undefined {
+    const holder = pou.addData as Record<string, unknown> | undefined;
+    const raw = holder?.[this.rawPouKey];
+    return raw && typeof raw === 'object' ? raw : undefined;
+  }
+
+  private cloneNode<T>(value: T): T {
+    return JSON.parse(JSON.stringify(value)) as T;
   }
 
   private serializeElement(element: LadderElement): any {
