@@ -347,6 +347,10 @@ export class RuntimeCore {
         this.variables.set(el.label, energized);
         this.options.ioAdapter.setOutputValue(el.label, energized);
         next = incoming;
+      } else {
+        // Non-boolean instruction nodes are currently treated as pass-through in
+        // the simplified runtime while preserving visual/import fidelity.
+        next = incoming;
       }
 
       startPower[i + 1] = startPower[i + 1] || next;
@@ -404,7 +408,7 @@ export class RuntimeCore {
   }
 
   private isElementConductive(element: LadderElement): boolean {
-    if (element.type === 'coil') {
+    if (element.type === 'coil' || element.type === 'instruction') {
       return true;
     }
     const raw = this.resolveSignal(element.label, element.state ?? true, (element as any).addrType);

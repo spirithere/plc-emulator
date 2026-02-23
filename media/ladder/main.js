@@ -312,10 +312,13 @@ function drawRow(svg, layer, owner, elements, rowIndex, startColumn, endColumn, 
     if (element?.type === 'coil') {
       const active = Boolean(seriesHighlights?.symbolActive?.[elementIndex]);
       drawCoilSymbol(svg, center, y, element, active, ref);
-    } else {
+    } else if (element?.type === 'contact') {
       const active = Boolean(seriesHighlights?.symbolActive?.[elementIndex]);
       const closed = isContactClosed(element);
       drawContactSymbol(svg, center, y, element, active, ref, closed);
+    } else {
+      const active = Boolean(seriesHighlights?.symbolActive?.[elementIndex]);
+      drawInstructionSymbol(svg, center, y, element, active, ref);
     }
 
     const card = createNodeCard(owner, elements, element, elementIndex);
@@ -434,15 +437,29 @@ function renderBranchesSection(rung) {
 function createNodeCard(owner, collection, element, elementIndex) {
   const card = document.createElement('div');
   card.className = `node-card ${element.type}`;
+  const editable = element.type === 'contact' || element.type === 'coil';
 
   const label = document.createElement('input');
   label.type = 'text';
   label.value = element.label || '';
-  label.placeholder = element.type === 'coil' ? 'Coil name' : 'Contact name';
-  label.oninput = event => {
-    element.label = event.target.value;
-  };
+  label.placeholder = element.type === 'coil' ? 'Coil name' : element.type === 'contact' ? 'Contact name' : 'Instruction';
+  if (editable) {
+    label.oninput = event => {
+      element.label = event.target.value;
+    };
+  } else {
+    label.readOnly = true;
+    card.classList.add('readonly');
+  }
   card.appendChild(label);
+
+  if (!editable) {
+    const note = document.createElement('div');
+    note.className = 'instruction-note';
+    note.textContent = `Read-only ${element.instructionKind || 'instruction'} node`;
+    card.appendChild(note);
+    return card;
+  }
 
   const controls = document.createElement('div');
   controls.className = 'element-controls';
@@ -657,10 +674,13 @@ function drawSeriesPreview(svg, elements, y, startColumn, endColumn, junctionX, 
     if (element?.type === 'coil') {
       const energized = Boolean(seriesHighlights?.symbolActive?.[index]);
       drawCoilSymbol(svg, center, y, element, energized, ref);
-    } else {
+    } else if (element?.type === 'contact') {
       const conducting = Boolean(seriesHighlights?.symbolActive?.[index]);
       const closed = isContactClosed(element);
       drawContactSymbol(svg, center, y, element, conducting, ref, closed);
+    } else {
+      const conducting = Boolean(seriesHighlights?.symbolActive?.[index]);
+      drawInstructionSymbol(svg, center, y, element, conducting, ref);
     }
   });
 }
@@ -748,6 +768,37 @@ function drawCoilSymbol(svg, x, y, element, active = false, ref) {
   svg.appendChild(leftPath);
   svg.appendChild(rightPath);
   drawLabel(svg, element, x, y + 28);
+}
+
+function drawInstructionSymbol(svg, x, y, element, active = false, ref) {
+  const width = 44;
+  const height = 32;
+  const rect = document.createElementNS(SVG_NS, 'rect');
+  rect.setAttribute('x', `${x - width / 2}`);
+  rect.setAttribute('y', `${y - height / 2}`);
+  rect.setAttribute('width', `${width}`);
+  rect.setAttribute('height', `${height}`);
+  rect.setAttribute('rx', '4');
+  rect.setAttribute('class', 'symbol instruction');
+  if (ref != null) {
+    rect.dataset.ref = ref;
+  }
+  rect.dataset.role = 'instruction';
+  applyStrokeStyle(rect, 'symbol');
+  if (active) {
+    rect.classList.add('active');
+  }
+  svg.appendChild(rect);
+
+  const kind = document.createElementNS(SVG_NS, 'text');
+  kind.setAttribute('x', `${x}`);
+  kind.setAttribute('y', `${y + 4}`);
+  kind.setAttribute('text-anchor', 'middle');
+  kind.setAttribute('class', 'symbol-label instruction-kind');
+  kind.textContent = (element?.instructionKind || 'INS').toUpperCase().slice(0, 6);
+  svg.appendChild(kind);
+
+  drawLabel(svg, element, x, y + 30);
 }
 
 function drawLabel(svg, element, x, y) {
@@ -976,7 +1027,8 @@ function executeSeriesDetailed(elements, initialPower) {
       rightActive[i] = power; // pass-through
       // power unchanged past a coil
     } else {
-      // unknown element type, pass-through as wire
+      // Instruction/unknown elements are treated as pass-through in preview.
+      symbolActive[i] = power;
       rightActive[i] = power;
     }
   }

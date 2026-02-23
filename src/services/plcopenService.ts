@@ -153,7 +153,10 @@ export class PLCopenService implements vscode.Disposable {
   }
 
   public getStructuredTextBlocks(): StructuredTextBlock[] {
-    return this.model.pous.filter(pou => (pou.language ?? 'ST') === 'ST');
+    return this.model.pous.filter(pou => {
+      const language = pou.language ?? 'ST';
+      return language === 'ST' || language === 'Mixed';
+    });
   }
 
   public getProjectPous(): StructuredTextBlock[] {
@@ -179,7 +182,8 @@ export class PLCopenService implements vscode.Disposable {
 
     // Parse ST var sections to surface local/POU-level variables (read-only for mapping UI).
     this.model.pous.forEach(pou => {
-      if ((pou.language ?? 'ST') !== 'ST') {
+      const language = pou.language ?? 'ST';
+      if (language !== 'ST' && language !== 'Mixed') {
         return;
       }
       const parsed = parseStructuredText(pou.body);
@@ -238,7 +242,8 @@ export class PLCopenService implements vscode.Disposable {
     if (!block) {
       throw new Error(`Structured Text block ${name} not found in model.`);
     }
-    if ((block.language ?? 'ST') !== 'ST') {
+    const language = block.language ?? 'ST';
+    if (language !== 'ST' && language !== 'Mixed') {
       throw new Error(`POU ${name} is not a Structured Text block and cannot be edited as ST.`);
     }
 
@@ -395,9 +400,8 @@ export class PLCopenService implements vscode.Disposable {
         const unsupportedElements = this.getUnsupportedLdElements(ldBody);
         if (unsupportedElements.length > 0) {
           this.reportLoadWarning(
-            `POU "${pouName}" contains advanced LD elements (${unsupportedElements.join(', ')}); skipped in simplified ladder runtime.`
+            `POU "${pouName}" contains unsupported LD elements (${unsupportedElements.join(', ')}); imported as preview/instruction nodes.`
           );
-          return;
         }
         const networks = ensureArray(ldBody?.network);
         if (networks && networks.length > 0) {
@@ -788,6 +792,11 @@ export class PLCopenService implements vscode.Disposable {
       'network',
       'contact',
       'coil',
+      'block',
+      'inVariable',
+      'outVariable',
+      'jump',
+      'label',
       'parallel',
       'powerRail',
       'leftPowerRail',
@@ -851,28 +860,12 @@ export class PLCopenService implements vscode.Disposable {
 
   private parseLdNetwork(network: any, fallbackId: string): LadderRung {
     const id = network?.name ?? network?.id ?? fallbackId;
-    const elements: LadderElement[] = [];
-
-    const contactNodes = ensureArray(network?.contact);
-    const coilNodes = ensureArray(network?.coil);
-
-    contactNodes?.forEach((node: any, idx: number) => {
-      elements.push(this.ldNodeToElement(node, 'contact', `${id}_c${idx}`));
-    });
-    coilNodes?.forEach((node: any, idx: number) => {
-      elements.push(this.ldNodeToElement(node, 'coil', `${id}_k${idx}`));
-    });
+    const elements = this.collectOrderedLdElements(network, id);
 
     const branches: LadderBranch[] | undefined = ensureArray(network?.parallel)
       ?.flatMap((parallel: any, parallelIndex: number) =>
         ensureArray(parallel?.branch)?.map((branch: any, branchIndex: number) => {
-          const branchElements: LadderElement[] = [];
-          ensureArray(branch?.contact)?.forEach((node: any, idx: number) => {
-            branchElements.push(this.ldNodeToElement(node, 'contact', `${id}_b${branchIndex}_c${idx}`));
-          });
-          ensureArray(branch?.coil)?.forEach((node: any, idx: number) => {
-            branchElements.push(this.ldNodeToElement(node, 'coil', `${id}_b${branchIndex}_k${idx}`));
-          });
+          const branchElements = this.collectOrderedLdElements(branch, `${id}_b${branchIndex}`);
           const startColumnRaw = branch?.startColumn ?? branch?.['@_startColumn'] ?? '0';
           const endColumnRaw = branch?.endColumn ?? branch?.['@_endColumn'];
           const startColumn = Number.parseInt(startColumnRaw, 10);
@@ -911,6 +904,101 @@ export class PLCopenService implements vscode.Disposable {
       state,
       addrType
     };
+  }
+
+  private collectOrderedLdElements(container: any, idPrefix: string): LadderElement[] {
+    const entries: Array<{ order: number; element: LadderElement }> = [];
+    let fallbackOrder = 0;
+    const pushEntry = (node: any, element: LadderElement): void => {
+      entries.push({
+        order: this.readLocalId(node, fallbackOrder),
+        element
+      });
+      fallbackOrder += 1;
+    };
+
+    ensureArray(container?.contact)?.forEach((node: any, idx: number) => {
+      pushEntry(node, this.ldNodeToElement(node, 'contact', `${idPrefix}_c${idx}`));
+    });
+    ensureArray(container?.coil)?.forEach((node: any, idx: number) => {
+      pushEntry(node, this.ldNodeToElement(node, 'coil', `${idPrefix}_k${idx}`));
+    });
+    ensureArray(container?.inVariable)?.forEach((node: any, idx: number) => {
+      pushEntry(
+        node,
+        this.ldInstructionNodeToElement(node, {
+          fallbackId: `${idPrefix}_i${idx}`,
+          instructionKind: 'inVariable',
+          label: node?.expression ?? node?.['#text'] ?? 'inVariable'
+        })
+      );
+    });
+    ensureArray(container?.block)?.forEach((node: any, idx: number) => {
+      const typeName = this.readAttr(node, 'typeName') ?? 'BLOCK';
+      const instanceName = this.readAttr(node, 'instanceName');
+      const label = instanceName ? `${instanceName}:${typeName}` : typeName;
+      pushEntry(
+        node,
+        this.ldInstructionNodeToElement(node, {
+          fallbackId: `${idPrefix}_blk${idx}`,
+          instructionKind: 'block',
+          label
+        })
+      );
+    });
+    ensureArray(container?.jump)?.forEach((node: any, idx: number) => {
+      const jumpLabel = this.readAttr(node, 'label') ?? 'jump';
+      pushEntry(
+        node,
+        this.ldInstructionNodeToElement(node, {
+          fallbackId: `${idPrefix}_j${idx}`,
+          instructionKind: 'jump',
+          label: `JMP ${jumpLabel}`
+        })
+      );
+    });
+    ensureArray(container?.label)?.forEach((node: any, idx: number) => {
+      const targetLabel = this.readAttr(node, 'label') ?? 'label';
+      pushEntry(
+        node,
+        this.ldInstructionNodeToElement(node, {
+          fallbackId: `${idPrefix}_l${idx}`,
+          instructionKind: 'label',
+          label: `LBL ${targetLabel}`
+        })
+      );
+    });
+
+    return entries
+      .sort((a, b) => a.order - b.order)
+      .map(entry => entry.element);
+  }
+
+  private ldInstructionNodeToElement(
+    node: any,
+    params: { fallbackId: string; instructionKind: string; label: string }
+  ): LadderElement {
+    const id =
+      this.readAttr(node, 'localId') ??
+      this.readAttr(node, 'refLocalId') ??
+      this.readAttr(node, 'id') ??
+      params.fallbackId;
+    return {
+      id,
+      label: params.label,
+      type: 'instruction',
+      instructionKind: params.instructionKind,
+      metadata: this.cloneNode(node)
+    };
+  }
+
+  private readLocalId(node: any, fallbackOrder: number): number {
+    const localId = this.readAttr(node, 'localId') ?? this.readAttr(node, 'id');
+    const parsed = Number.parseInt(String(localId ?? ''), 10);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+    return 10000 + fallbackOrder;
   }
 
   private async persist(): Promise<void> {
@@ -1173,16 +1261,27 @@ export class PLCopenService implements vscode.Disposable {
     };
     const contacts: any[] = [];
     const coils: any[] = [];
+    const instructions: any[] = [];
     rung.elements.forEach((el, elIndex) => {
-      const node = this.serializeLdElement(el, `${rung.id}_${elIndex}`);
       if (el.type === 'contact') {
-        contacts.push(node);
+        contacts.push(this.serializeLdElement(el, `${rung.id}_${elIndex}`));
+      } else if (el.type === 'coil') {
+        coils.push(this.serializeLdElement(el, `${rung.id}_${elIndex}`));
       } else {
-        coils.push(node);
+        instructions.push(this.serializeLdInstruction(el, `${rung.id}_${elIndex}`));
       }
     });
     if (contacts.length > 0) network.contact = contacts;
     if (coils.length > 0) network.coil = coils;
+    instructions.forEach(instruction => {
+      const key = Object.keys(instruction)[0];
+      if (!network[key]) {
+        network[key] = [];
+      } else if (!Array.isArray(network[key])) {
+        network[key] = [network[key]];
+      }
+      network[key].push(instruction[key]);
+    });
 
     if (rung.branches && rung.branches.length > 0) {
       network.parallel = {
@@ -1200,16 +1299,27 @@ export class PLCopenService implements vscode.Disposable {
     };
     const contacts: any[] = [];
     const coils: any[] = [];
+    const instructions: any[] = [];
     branch.elements.forEach((el, idx) => {
-      const serialized = this.serializeLdElement(el, `${branch.id}_${idx}`);
       if (el.type === 'contact') {
-        contacts.push(serialized);
+        contacts.push(this.serializeLdElement(el, `${branch.id}_${idx}`));
+      } else if (el.type === 'coil') {
+        coils.push(this.serializeLdElement(el, `${branch.id}_${idx}`));
       } else {
-        coils.push(serialized);
+        instructions.push(this.serializeLdInstruction(el, `${branch.id}_${idx}`));
       }
     });
     if (contacts.length > 0) node.contact = contacts;
     if (coils.length > 0) node.coil = coils;
+    instructions.forEach(instruction => {
+      const key = Object.keys(instruction)[0];
+      if (!node[key]) {
+        node[key] = [];
+      } else if (!Array.isArray(node[key])) {
+        node[key] = [node[key]];
+      }
+      node[key].push(instruction[key]);
+    });
     return node;
   }
 
@@ -1227,10 +1337,55 @@ export class PLCopenService implements vscode.Disposable {
         node['@_negated'] = 'true';
       }
     }
-    if (element.type === 'coil') {
-      return node;
-    }
     return node;
+  }
+
+  private serializeLdInstruction(element: LadderElement, fallbackId: string): any {
+    const localId = element.id ?? fallbackId;
+    const kind = element.instructionKind ?? 'instruction';
+    const label = element.label ?? '';
+    if (kind === 'inVariable') {
+      return {
+        inVariable: {
+          '@_localId': localId,
+          expression: label
+        }
+      };
+    }
+    if (kind === 'jump') {
+      return {
+        jump: {
+          '@_localId': localId,
+          '@_label': label.replace(/^JMP\s+/i, '')
+        }
+      };
+    }
+    if (kind === 'label') {
+      return {
+        label: {
+          '@_localId': localId,
+          '@_label': label.replace(/^LBL\s+/i, '')
+        }
+      };
+    }
+    if (kind === 'block') {
+      const [instanceName, typeNameRaw] = label.includes(':') ? label.split(':', 2) : [undefined, label];
+      return {
+        block: {
+          '@_localId': localId,
+          '@_typeName': typeNameRaw || 'BLOCK',
+          ...(instanceName ? { '@_instanceName': instanceName } : {})
+        }
+      };
+    }
+    return {
+      comment: {
+        '@_localId': localId,
+        content: {
+          xhtml: label
+        }
+      }
+    };
   }
 
   private async ensureProjectFile(): Promise<void> {

@@ -48,9 +48,11 @@ export interface VariableDeclaration {
 export interface LadderElement {
   id: string;
   label: string;
-  type: 'contact' | 'coil';
+  type: 'contact' | 'coil' | 'instruction';
   state?: boolean;
   variant?: 'no' | 'nc';
+  instructionKind?: string;
+  metadata?: Record<string, unknown>;
   // Addressing domain derived from label prefix or XML attribute.
   // X: input, M: internal memory, Y: output
   addrType?: AddressType;

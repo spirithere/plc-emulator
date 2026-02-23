@@ -110,5 +110,28 @@ describe('PLCopenService external CODESYS fixtures', () => {
 
     expect(service.getStructuredTextBlocks().map(p => p.name)).toContain('Simulation');
     expect(service.getLoadWarnings().length).toBeGreaterThan(0);
+
+    const ladder = service.getLadderRungs();
+    expect(ladder.length).toBeGreaterThan(0);
+    const hasInstruction = ladder.some(rung => rung.elements.some(element => element.type === 'instruction'));
+    expect(hasInstruction).toBe(true);
+  });
+
+  it('round-trips refrigerator-control fixture without dropping CFC/LD POUs', () => {
+    const xml = readFileSync(resolve(fixtureDir, 'refrigerator-control.xml'), 'utf8');
+    const service = new PLCopenService();
+    service.loadFromText(xml);
+
+    const exported = service.exportToXml();
+    const roundTrip = new PLCopenService();
+    roundTrip.loadFromText(exported);
+
+    const allPous = roundTrip.getProjectPous();
+    expect(allPous.map(p => p.name)).toContain('PLC_PRG');
+    expect(allPous.map(p => p.name)).toContain('Signals');
+    expect(allPous.map(p => p.name)).toContain('Simulation');
+
+    expect(allPous.find(p => p.name === 'PLC_PRG')?.language).toBe('CFC');
+    expect(allPous.find(p => p.name === 'Signals')?.language).toBe('LD');
   });
 });
