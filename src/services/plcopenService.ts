@@ -421,11 +421,11 @@ export class PLCopenService implements vscode.Disposable {
         const networks = ensureArray(ldBody?.network);
         if (networks && networks.length > 0) {
           networks.forEach((net: any, netIndex: number) => {
-            fromLd.push(this.parseLdNetwork(net, `${pou?.name ?? 'LD'}_${netIndex ?? pouIndex}`));
+            fromLd.push(...this.parseLdNetwork(net, `${pou?.name ?? 'LD'}_${netIndex ?? pouIndex}`));
           });
         } else if (ldBody) {
           // CODESYS LD can store elements directly under <LD> without <network>.
-          fromLd.push(this.parseLdNetwork(ldBody, `${pou?.name ?? 'LD'}_0`));
+          fromLd.push(...this.parseLdNetwork(ldBody, `${pou?.name ?? 'LD'}_0`));
         }
       });
       if (fromLd.length > 0) {
@@ -1311,8 +1311,14 @@ export class PLCopenService implements vscode.Disposable {
     return 'BOOL';
   }
 
-  private parseLdNetwork(network: any, fallbackId: string): LadderRung {
+  private parseLdNetwork(network: any, fallbackId: string): LadderRung[] {
     const id = network?.name ?? network?.id ?? fallbackId;
+
+    const splitRows = this.buildPositionSplitLdRungs(network, id);
+    if (splitRows && splitRows.length > 0) {
+      return splitRows;
+    }
+
     const elements = this.collectOrderedLdElements(network, id);
 
     const branches: LadderBranch[] | undefined = ensureArray(network?.parallel)
@@ -1334,11 +1340,11 @@ export class PLCopenService implements vscode.Disposable {
       )
       .filter(Boolean);
 
-    return {
+    return [{
       id,
       elements,
       branches: branches && branches.length > 0 ? branches : undefined
-    };
+    }];
   }
 
   private ldNodeToElement(node: any, type: 'contact' | 'coil', fallbackId: string): LadderElement {
@@ -1361,11 +1367,23 @@ export class PLCopenService implements vscode.Disposable {
   }
 
   private collectOrderedLdElements(container: any, idPrefix: string): LadderElement[] {
-    const entries: Array<{ order: number; element: LadderElement }> = [];
+    return this.collectLdElementEntries(container, idPrefix)
+      .sort((a, b) => a.order - b.order)
+      .map(entry => entry.element);
+  }
+
+  private collectLdElementEntries(
+    container: any,
+    idPrefix: string
+  ): Array<{ order: number; x?: number; y?: number; element: LadderElement }> {
+    const entries: Array<{ order: number; x?: number; y?: number; element: LadderElement }> = [];
     let fallbackOrder = 0;
     const pushEntry = (node: any, element: LadderElement): void => {
+      const position = this.readNodePosition(node);
       entries.push({
         order: this.readLocalId(node, fallbackOrder),
+        x: position?.x,
+        y: position?.y,
         element
       });
       fallbackOrder += 1;
@@ -1423,9 +1441,88 @@ export class PLCopenService implements vscode.Disposable {
       );
     });
 
-    return entries
-      .sort((a, b) => a.order - b.order)
-      .map(entry => entry.element);
+    return entries;
+  }
+
+  private buildPositionSplitLdRungs(network: any, baseId: string): LadderRung[] | undefined {
+    // Keep explicit PLCopen branches untouched to avoid altering authored branch semantics.
+    if ((ensureArray(network?.parallel)?.length ?? 0) > 0) {
+      return undefined;
+    }
+
+    const entries = this.collectLdElementEntries(network, baseId);
+    if (entries.length === 0) {
+      return undefined;
+    }
+
+    const positioned = entries.filter(entry => Number.isFinite(entry.y));
+    if (positioned.length < 2 || positioned.length < Math.ceil(entries.length * 0.6)) {
+      return undefined;
+    }
+
+    const sortedByY = [...positioned].sort((a, b) => Number(a.y) - Number(b.y));
+    const tolerance = 26;
+    const groups: Array<{ centerY: number; entries: typeof entries }> = [];
+
+    sortedByY.forEach(entry => {
+      const y = Number(entry.y);
+      const existing = groups.find(group => Math.abs(group.centerY - y) <= tolerance);
+      if (existing) {
+        const count = existing.entries.length;
+        existing.centerY = (existing.centerY * count + y) / (count + 1);
+        existing.entries.push(entry);
+        return;
+      }
+      groups.push({ centerY: y, entries: [entry] });
+    });
+
+    if (groups.length <= 1) {
+      return undefined;
+    }
+
+    const rungs = groups
+      .sort((a, b) => a.centerY - b.centerY)
+      .map((group, index) => {
+        const elements = [...group.entries]
+          .sort((a, b) => {
+            const ax = Number.isFinite(a.x) ? Number(a.x) : Number.MAX_SAFE_INTEGER;
+            const bx = Number.isFinite(b.x) ? Number(b.x) : Number.MAX_SAFE_INTEGER;
+            if (ax !== bx) {
+              return ax - bx;
+            }
+            return a.order - b.order;
+          })
+          .map(entry => entry.element);
+        return {
+          id: `${baseId}_row_${index}`,
+          elements
+        } as LadderRung;
+      })
+      .filter(rung => rung.elements.length > 0);
+
+    return rungs.length > 1 ? rungs : undefined;
+  }
+
+  private readNodePosition(node: any): { x?: number; y?: number } | undefined {
+    const pos = ensureArray(node?.position)?.[0] ?? node?.position;
+    if (!pos) {
+      return undefined;
+    }
+    const xRaw = this.readAttr(pos, 'x') ?? pos?.x;
+    const yRaw = this.readAttr(pos, 'y') ?? pos?.y;
+    const widthRaw = this.readAttr(node, 'width');
+    const heightRaw = this.readAttr(node, 'height');
+    const x = Number.parseFloat(String(xRaw ?? ''));
+    const y = Number.parseFloat(String(yRaw ?? ''));
+    const width = Number.parseFloat(String(widthRaw ?? ''));
+    const height = Number.parseFloat(String(heightRaw ?? ''));
+    if (!Number.isFinite(x) && !Number.isFinite(y)) {
+      return undefined;
+    }
+    return {
+      x: Number.isFinite(x) ? x + (Number.isFinite(width) ? width / 2 : 0) : undefined,
+      y: Number.isFinite(y) ? y + (Number.isFinite(height) ? height / 2 : 0) : undefined
+    };
   }
 
   private ldInstructionNodeToElement(

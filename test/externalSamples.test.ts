@@ -47,25 +47,25 @@ const fixtures: ExternalFixture[] = [
 const ladderFixtures: ExternalLadderFixture[] = [
   {
     file: 'ladder/factoryio-ft-con01.xml',
-    minRungs: 1,
+    minRungs: 2,
     minContacts: 10,
     minCoils: 8
   },
   {
     file: 'ladder/factoryio-ft-con02.xml',
-    minRungs: 1,
+    minRungs: 2,
     minContacts: 6,
     minCoils: 6
   },
   {
     file: 'ladder/factoryio-ft-con03.xml',
-    minRungs: 1,
+    minRungs: 2,
     minContacts: 6,
     minCoils: 6
   },
   {
     file: 'ladder/factoryio-ft-con04.xml',
-    minRungs: 1,
+    minRungs: 2,
     minContacts: 10,
     minCoils: 8
   }
