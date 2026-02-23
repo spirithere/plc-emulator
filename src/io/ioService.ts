@@ -84,17 +84,17 @@ export class IOSimService implements RuntimeIOAdapter {
           const existing = desiredInputs.get(name);
           desiredInputs.set(name, {
             defaultValue: existing?.defaultValue ?? defaultValue,
-            address: variable.address,
+            address: variable.address ?? existing?.address,
             source: 'globalVar',
-            opcUaNodeId: variable.opcUaNodeId
+            opcUaNodeId: variable.opcUaNodeId ?? existing?.opcUaNodeId
           });
         } else if (direction === 'output') {
           const existing = desiredOutputs.get(name);
           desiredOutputs.set(name, {
             defaultValue: existing?.defaultValue ?? defaultValue,
-            address: variable.address,
+            address: variable.address ?? existing?.address,
             source: 'globalVar',
-            opcUaNodeId: variable.opcUaNodeId
+            opcUaNodeId: variable.opcUaNodeId ?? existing?.opcUaNodeId
           });
         }
       });
@@ -103,6 +103,22 @@ export class IOSimService implements RuntimeIOAdapter {
     model?.configurations?.forEach(config => {
       registerVariables(config.globalVars);
       config.resources?.forEach(resource => registerVariables(resource.globalVars));
+    });
+
+    // Some PLCopen exports define mapped IO addresses on POU interface variables
+    // (for example localVars with %IX/%QX), not only configuration globals.
+    model?.pous?.forEach(pou => {
+      const intf = pou.interface;
+      if (!intf) {
+        return;
+      }
+      registerVariables([
+        ...(intf.inputVars ?? []),
+        ...(intf.outputVars ?? []),
+        ...(intf.inOutVars ?? []),
+        ...(intf.localVars ?? []),
+        ...(intf.tempVars ?? [])
+      ]);
     });
 
     // Reconcile: remove ladder-sourced channels that no longer exist in the model.

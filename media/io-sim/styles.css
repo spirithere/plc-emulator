@@ -42,6 +42,11 @@ body {
   gap: 0.4rem;
 }
 
+.label .address {
+  color: #8a8a8a;
+  font-size: 0.82rem;
+}
+
 button {
   border: 1px solid #444;
   background: #222;
